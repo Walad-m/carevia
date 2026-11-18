@@ -1,0 +1,240 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+
+enum DoctorStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AppointmentStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  MTN_MOMO
+  TELECEL_CASH
+  AT_MONEY
+  CARD
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum AlertSeverity {
+  INFO
+  WATCH
+  WARNING
+  CRITICAL
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          Role      @default(PATIENT)
+  consentGivenAt DateTime?    // Act 843 — record when consent was given
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  patientProfile  PatientProfile?
+  doctorProfile   DoctorProfile?
+  notifications   Notification[]
+  patientAppointments Appointment[] @relation("PatientAppointments")
+  doctorAppointments  Appointment[] @relation("DoctorAppointments")
+  payments            Payment[]     @relation("PatientPayments")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  @@unique([identifier, token])
+}
+
+model PatientProfile {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  dateOfBirth   DateTime?
+  gender        String?
+  phone         String?
+  address       String?
+  bloodGroup    String?
+  allergies     String?
+  emergencyContact String?
+  emergencyPhone   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model DoctorProfile {
+  id              String       @id @default(cuid())
+  userId          String       @unique
+  specialty       String       // from predefined list
+  mdcId           String       @unique  // MDC Ghana ID
+  licenseImageUrl String?      // optional license photo
+  bio             String?
+  phone           String?
+  status          DoctorStatus @default(PENDING)  // admin approves
+  rejectionReason String?
+  consultFee      Float        @default(0)   // flat fee set by platform
+  isAvailable     Boolean      @default(true) // On-duty for consults
+  availableDays   String?      @default("MON,TUE,WED,THU,FRI,SAT")
+  availableFrom   String?      @default("08:00")
+  availableTo     String?      @default("18:00")
+  reviewedAt      DateTime?    // when admin approved/rejected
+  reviewedBy      String?      // admin userId
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  type      String   // e.g. APPROVAL, APPOINTMENT, SYSTEM, OUTBREAK
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Appointment {
+  id               String            @id @default(cuid())
+  patientId        String
+  doctorId         String
+  scheduledAt      DateTime
+  status           AppointmentStatus @default(PENDING)
+
+  // Problem description & AI Triage
+  problemText      String?           @db.Text
+  voiceAudioUrl    String?           @db.Text
+  urgency          String?           @default("ROUTINE") // ROUTINE, URGENT, EMERGENCY
+  matchedSpecialty String?
+  triageReasoning  String?           @db.Text
+  rerouteCount     Int               @default(0)
+
+  // Google Gemini AI structured summary
+  aiSummary        String?           @db.Text
+
+  // Doctor decline reason
+  declineReason    String?           @db.Text
+
+  payment          Payment?
+
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  patient          User              @relation("PatientAppointments", fields: [patientId], references: [id], onDelete: Cascade)
+  doctor           User              @relation("DoctorAppointments", fields: [doctorId], references: [id], onDelete: Cascade)
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  appointmentId  String        @unique
+  patientId      String
+  amount         Float         // e.g. 80.00
+  currency       String        @default("GHS")
+  method         PaymentMethod @default(MTN_MOMO)
+  phoneNumber    String?       // For MoMo, e.g. 024XXXXXXX
+  network        String?       // MTN, Telecel, AT
+  transactionRef String        @unique // e.g. TXN-GH-2026-XXXXX
+  status         PaymentStatus @default(PENDING)
+  notes          String?
+  paidAt         DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  appointment    Appointment   @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  patient        User          @relation("PatientPayments", fields: [patientId], references: [id], onDelete: Cascade)
+}
+
+model OutbreakAlert {
+  id             String        @id @default(cuid())
+  title          String        // e.g. "Cholera Surveillance Alert"
+  disease        String        // e.g. "Cholera"
+  region         String        // e.g. "Greater Accra & Central Regions"
+  severity       AlertSeverity @default(WARNING)
+  summary        String        @db.Text
+  symptoms       String        @db.Text
+  preventionTips String        @db.Text
+  casesReported  Int?          @default(0)
+  source         String        @default("Ghana Health Service (GHS)")
+  isActive       Boolean       @default(true)
+  publishedAt    DateTime      @default(now())
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+model HealthArticle {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  title       String
+  category    String    // e.g. "Infectious Disease", "Cardiovascular", "Pediatrics", "Mental Health"
+  readTime    String    @default("4 min read")
+  summary     String    @db.Text
+  content     String    @db.Text
+  authorName  String    @default("Carevia Medical Advisory Board")
+  authorTitle String    @default("MDC Accredited")
+  featured    Boolean   @default(false)
+  publishedAt DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
