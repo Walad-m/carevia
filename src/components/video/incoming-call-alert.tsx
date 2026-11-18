@@ -95,7 +95,7 @@ export function IncomingCallAlert({
       // BroadcastChannel optional
     }
 
-    // Polling fallback
+    // Polling fallback every 1.5s for snappy incoming call alert
     const interval = setInterval(async () => {
       try {
         const res = await fetch("/api/consultations/call")
@@ -110,7 +110,7 @@ export function IncomingCallAlert({
       } catch {
         // Polling silent catch
       }
-    }, 3500)
+    }, 1500)
 
     return () => {
       clearInterval(interval)
