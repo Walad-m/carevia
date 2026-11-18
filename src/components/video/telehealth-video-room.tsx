@@ -1,29 +1,18 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import {
-  Mic,
-  MicOff,
-  Video as VideoIcon,
-  VideoOff,
-  PhoneOff,
-  Share2,
   FileText,
   Sparkles,
   ShieldCheck,
-  Activity,
   CheckCircle2,
   Loader2,
   Clock,
-  User,
   X,
   Maximize2,
   Minimize2,
-  Volume2,
-  VolumeX,
-  RefreshCw,
-  Tv,
+  Video,
 } from "lucide-react"
 
 export interface TelehealthAppointment {
@@ -62,62 +51,25 @@ interface TelehealthVideoRoomProps {
   onExit?: () => void
 }
 
-const ICE_SERVERS: RTCConfiguration = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-    { urls: "stun:stun2.l.google.com:19302" },
-    {
-      urls: "turn:openrelay.metered.ca:80",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443?transport=tcp",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-  ],
-}
-
 export function TelehealthVideoRoom({
   appointment,
   currentUserRole,
   onExit,
 }: TelehealthVideoRoomProps) {
   const router = useRouter()
+  const jitsiContainerRef = useRef<HTMLDivElement | null>(null)
+  const apiRef = useRef<any>(null)
 
-  // Video element refs
-  const localVideoRef = useRef<HTMLVideoElement | null>(null)
-  const remoteVideoRef = useRef<HTMLVideoElement | null>(null)
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
-  const channelRef = useRef<BroadcastChannel | null>(null)
-  const localStreamRef = useRef<MediaStream | null>(null)
-  const pendingCandidatesRef = useRef<any[]>([])
-  const processedCandidatesRef = useRef<Set<string>>(new Set())
-
-  // Media & connection state
-  const [micOn, setMicOn] = useState(true)
-  const [cameraOn, setCameraOn] = useState(true)
-  const [isScreenSharing, setIsScreenSharing] = useState(false)
+  // Status & duration state
   const [callDuration, setCallDuration] = useState(0)
-  const [peerConnected, setPeerConnected] = useState(false)
-  const [isDemoMode, setIsDemoMode] = useState(false)
-  const [remoteAudioMuted, setRemoteAudioMuted] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const [showDrawer, setShowDrawer] = useState(currentUserRole === "DOCTOR")
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [audioLevel, setAudioLevel] = useState(0)
-  const [signalingStatus, setSignalingStatus] = useState("Connecting room...")
 
   // Clinical Workspace State (for doctor)
   const [activeTab, setActiveTab] = useState<"summary" | "notes" | "rx">("summary")
   const [clinicalNotes, setClinicalNotes] = useState(
-    "Patient presents with primary symptoms as reported. Vitals stable upon remote inspection. Advised adequate hydration, rest, and symptomatic therapy."
+    "Patient presents with primary symptoms as reported. Vitals stable upon inspection. Advised adequate hydration, rest, and symptomatic therapy."
   )
   const [prescription, setPrescription] = useState(
     "1. Tab Paracetamol 1g PO TDS x 3 days\n2. Oral Rehydration Salts (ORS) 1 sachet in 1L water PRN\n3. Follow up if symptoms worsen"
@@ -130,423 +82,15 @@ export function TelehealthVideoRoom({
   const remotePeerName = currentUserRole === "DOCTOR" ? patientName : doctorName
   const remotePeerRole = currentUserRole === "DOCTOR" ? "Patient" : "Physician"
 
-  // 1. Initialize WebRTC and Signaling
-  useEffect(() => {
-    let mounted = true
-    const roomId = `carevia-room-${appointment.id}`
-
-    // Setup local BroadcastChannel for same-browser instant sync
-    let channel: BroadcastChannel | null = null
-    try {
-      channel = new BroadcastChannel(roomId)
-      channelRef.current = channel
-    } catch (e) {
-      console.warn("BroadcastChannel not supported", e)
-    }
-
-    // Initialize WebRTC PeerConnection with STUN + TURN
-    const pc = new RTCPeerConnection(ICE_SERVERS)
-    peerConnectionRef.current = pc
-
-    // Handle incoming remote media track
-    pc.ontrack = (event) => {
-      if (remoteVideoRef.current && event.streams[0]) {
-        remoteVideoRef.current.srcObject = event.streams[0]
-        remoteVideoRef.current.play().catch(() => {
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.muted = true
-            setRemoteAudioMuted(true)
-            remoteVideoRef.current.play().catch(() => {})
-          }
-        })
-        setPeerConnected(true)
-        setSignalingStatus("Peer video stream connected")
-      }
-    }
-
-    // Handle ICE candidates
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        // 1. Post to local channel
-        if (channel) {
-          channel.postMessage({
-            type: "candidate",
-            candidate: event.candidate,
-            senderRole: currentUserRole,
-          })
-        }
-        // 2. Post to cloud database signaling endpoint
-        fetch("/api/consultations/call", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            appointmentId: appointment.id,
-            action: "SIGNAL",
-            candidate: event.candidate,
-            role: currentUserRole,
-          }),
-        }).catch(() => {})
-      }
-    }
-
-    // Handle ICE connection state changes
-    pc.oniceconnectionstatechange = () => {
-      if (!mounted) return
-      if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
-        setPeerConnected(true)
-        setSignalingStatus("Encrypted P2P Active")
-      } else if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
-        setSignalingStatus("Reconnecting video stream...")
-      }
-    }
-
-    // Process ICE candidates safely
-    const processCandidate = async (cand: any) => {
-      const candKey = JSON.stringify(cand)
-      if (processedCandidatesRef.current.has(candKey)) return
-      processedCandidatesRef.current.add(candKey)
-
-      if (pc.remoteDescription && pc.remoteDescription.type) {
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(cand))
-        } catch (err) {
-          console.warn("Error adding ICE candidate:", err)
-        }
-      } else {
-        pendingCandidatesRef.current.push(cand)
-      }
-    }
-
-    // Flush queued candidates once remote description is set
-    const flushPendingCandidates = async () => {
-      while (pendingCandidatesRef.current.length > 0) {
-        const cand = pendingCandidatesRef.current.shift()
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(cand))
-        } catch {}
-      }
-    }
-
-    // Cross-device cloud signaling polling loop
-    const signalingPoll = setInterval(async () => {
-      if (!mounted) return
+  // Exit / End call handler
+  const handleExit = () => {
+    if (apiRef.current) {
       try {
-        const res = await fetch(`/api/consultations/call?appointmentId=${appointment.id}`)
-        if (!res.ok) return
-        const data = await res.json()
-        const call = data.call
-        if (!call) return
-
-        // Case A: Current user is PATIENT, Doctor has created an Offer
-        if (currentUserRole === "PATIENT" && call.offer && !pc.currentRemoteDescription) {
-          setSignalingStatus("Physician offer received · Connecting...")
-          await pc.setRemoteDescription(new RTCSessionDescription(call.offer))
-          await flushPendingCandidates()
-
-          const answer = await pc.createAnswer()
-          await pc.setLocalDescription(answer)
-
-          fetch("/api/consultations/call", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              appointmentId: appointment.id,
-              action: "SIGNAL",
-              answer,
-              role: "PATIENT",
-            }),
-          }).catch(() => {})
-
-          channel?.postMessage({
-            type: "answer",
-            answer,
-            senderRole: "PATIENT",
-          })
-        }
-
-        // Case B: Current user is DOCTOR, Patient has created an Answer
-        else if (
-          currentUserRole === "DOCTOR" &&
-          call.answer &&
-          !pc.currentRemoteDescription &&
-          pc.signalingState === "have-local-offer"
-        ) {
-          setSignalingStatus("Patient connected · Synchronizing video...")
-          await pc.setRemoteDescription(new RTCSessionDescription(call.answer))
-          await flushPendingCandidates()
-        }
-
-        // Process remote peer candidates
-        const remoteCandidates =
-          currentUserRole === "DOCTOR" ? call.patientCandidates : call.doctorCandidates
-        if (remoteCandidates && Array.isArray(remoteCandidates)) {
-          for (const cand of remoteCandidates) {
-            await processCandidate(cand)
-          }
-        }
-      } catch (err) {
-        console.warn("Signaling poll tick error:", err)
-      }
-    }, 1500)
-
-    // Listen to local BroadcastChannel messages
-    if (channel) {
-      channel.onmessage = async (msg) => {
-        if (!mounted || msg.data.senderRole === currentUserRole) return
-
-        try {
-          if (msg.data.type === "offer" && !pc.currentRemoteDescription) {
-            await pc.setRemoteDescription(new RTCSessionDescription(msg.data.offer))
-            await flushPendingCandidates()
-            const answer = await pc.createAnswer()
-            await pc.setLocalDescription(answer)
-            channel?.postMessage({
-              type: "answer",
-              answer,
-              senderRole: currentUserRole,
-            })
-          } else if (msg.data.type === "answer" && !pc.currentRemoteDescription) {
-            await pc.setRemoteDescription(new RTCSessionDescription(msg.data.answer))
-            await flushPendingCandidates()
-          } else if (msg.data.type === "candidate") {
-            await processCandidate(msg.data.candidate)
-          }
-        } catch (err) {
-          console.warn("WebRTC channel message error", err)
-        }
-      }
+        apiRef.current.dispose()
+      } catch {}
+      apiRef.current = null
     }
 
-    // Start local camera and mic
-    async function startLocalMedia() {
-      try {
-        if (navigator.mediaDevices?.getUserMedia) {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-            audio: true,
-          })
-
-          if (!mounted) {
-            stream.getTracks().forEach((t) => t.stop())
-            return
-          }
-
-          localStreamRef.current = stream
-          if (localVideoRef.current) {
-            localVideoRef.current.srcObject = stream
-          }
-
-          // Add audio and video tracks to PeerConnection
-          stream.getTracks().forEach((track) => {
-            pc.addTrack(track, stream)
-          })
-
-          // Doctor creates offer immediately after acquiring camera
-          if (currentUserRole === "DOCTOR") {
-            setSignalingStatus("Initializing physician room offer...")
-            try {
-              const offer = await pc.createOffer({
-                offerToReceiveAudio: true,
-                offerToReceiveVideo: true,
-              })
-              await pc.setLocalDescription(offer)
-
-              // Push offer to database
-              fetch("/api/consultations/call", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  appointmentId: appointment.id,
-                  action: "START",
-                  offer,
-                  role: "DOCTOR",
-                }),
-              }).catch(() => {})
-
-              // Broadcast to local tab
-              channel?.postMessage({
-                type: "offer",
-                offer,
-                senderRole: "DOCTOR",
-              })
-            } catch (offerErr) {
-              console.warn("Failed to create offer:", offerErr)
-            }
-          }
-
-          // Setup audio level meter
-          try {
-            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
-            const analyser = audioCtx.createAnalyser()
-            const source = audioCtx.createMediaStreamSource(stream)
-            source.connect(analyser)
-            analyser.fftSize = 64
-            const dataArray = new Uint8Array(analyser.frequencyBinCount)
-
-            const updateAudio = () => {
-              if (!mounted) {
-                audioCtx.close().catch(() => {})
-                return
-              }
-              analyser.getByteFrequencyData(dataArray)
-              let sum = 0
-              for (let i = 0; i < dataArray.length; i++) {
-                sum += dataArray[i]
-              }
-              setAudioLevel(Math.min(100, Math.floor(sum / dataArray.length)))
-              requestAnimationFrame(updateAudio)
-            }
-            updateAudio()
-          } catch {
-            // Audio analyser optional
-          }
-
-          // Trigger ringtone alert on patient's dashboard
-          if (currentUserRole === "DOCTOR") {
-            const targetPatientId = appointment.patientId || appointment.patient?.id
-            try {
-              const alertChannel = new BroadcastChannel("carevia-call-alerts")
-              alertChannel.postMessage({
-                type: "CALL_START",
-                appointmentId: appointment.id,
-                doctorId: appointment.doctorId || appointment.doctor?.id,
-                doctorName: appointment.doctor?.name || "Attending Physician",
-                specialty: appointment.doctor?.doctorProfile?.specialty || "General Practice",
-                patientId: targetPatientId,
-              })
-              setTimeout(() => alertChannel.close(), 1000)
-            } catch {}
-          }
-        }
-      } catch (err) {
-        console.warn("Local media stream access error:", err)
-        setSignalingStatus("Camera preview active")
-      }
-    }
-
-    startLocalMedia()
-
-    // Call duration timer
-    const interval = setInterval(() => {
-      setCallDuration((c) => c + 1)
-    }, 1000)
-
-    return () => {
-      mounted = false
-      clearInterval(interval)
-      clearInterval(signalingPoll)
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((t) => t.stop())
-      }
-      pc.close()
-      if (channel) {
-        channel.close()
-      }
-    }
-  }, [appointment.id, currentUserRole])
-
-  // Toggle Camera
-  const toggleCamera = useCallback(() => {
-    if (localStreamRef.current) {
-      localStreamRef.current.getVideoTracks().forEach((t) => {
-        t.enabled = !cameraOn
-      })
-    }
-    setCameraOn((prev) => !prev)
-  }, [cameraOn])
-
-  // Toggle Mic
-  const toggleMic = useCallback(() => {
-    if (localStreamRef.current) {
-      localStreamRef.current.getAudioTracks().forEach((t) => {
-        t.enabled = !micOn
-      })
-    }
-    setMicOn((prev) => !prev)
-  }, [micOn])
-
-  // Toggle Presentation Demo View (guarantees a 2-way call demonstration even on 1 device)
-  const toggleDemoMode = () => {
-    setIsDemoMode((prev) => !prev)
-  }
-
-  // Toggle Screen Share
-  const toggleScreenShare = useCallback(async () => {
-    if (!isScreenSharing && navigator.mediaDevices?.getDisplayMedia) {
-      try {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true })
-        const screenTrack = screenStream.getVideoTracks()[0]
-
-        if (peerConnectionRef.current) {
-          const senders = peerConnectionRef.current.getSenders()
-          const videoSender = senders.find((s) => s.track?.kind === "video")
-          if (videoSender) {
-            videoSender.replaceTrack(screenTrack)
-          }
-        }
-
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = screenStream
-        }
-        setIsScreenSharing(true)
-
-        screenTrack.onended = () => {
-          setIsScreenSharing(false)
-          if (localStreamRef.current) {
-            const originalTrack = localStreamRef.current.getVideoTracks()[0]
-            if (peerConnectionRef.current) {
-              const senders = peerConnectionRef.current.getSenders()
-              const videoSender = senders.find((s) => s.track?.kind === "video")
-              if (videoSender && originalTrack) {
-                videoSender.replaceTrack(originalTrack)
-              }
-            }
-            if (localVideoRef.current) {
-              localVideoRef.current.srcObject = localStreamRef.current
-            }
-          }
-        }
-      } catch {
-        setIsScreenSharing(false)
-      }
-    } else {
-      setIsScreenSharing(false)
-      if (localStreamRef.current) {
-        const originalTrack = localStreamRef.current.getVideoTracks()[0]
-        if (peerConnectionRef.current) {
-          const senders = peerConnectionRef.current.getSenders()
-          const videoSender = senders.find((s) => s.track?.kind === "video")
-          if (videoSender && originalTrack) {
-            videoSender.replaceTrack(originalTrack)
-          }
-        }
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = localStreamRef.current
-        }
-      }
-    }
-  }, [isScreenSharing])
-
-  // End Call / Exit
-  const handleEndCall = () => {
-    fetch("/api/consultations/call", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ appointmentId: appointment.id, action: "END" }),
-    }).catch(() => {})
-
-    try {
-      const alertChannel = new BroadcastChannel("carevia-call-alerts")
-      alertChannel.postMessage({
-        type: "CALL_END",
-        appointmentId: appointment.id,
-      })
-      setTimeout(() => alertChannel.close(), 500)
-    } catch {}
-
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((t) => t.stop())
-    }
     if (onExit) {
       onExit()
     } else {
@@ -575,7 +119,7 @@ export function TelehealthVideoRoom({
       if (res.ok) {
         setCompleted(true)
         setTimeout(() => {
-          handleEndCall()
+          handleExit()
         }, 1500)
       }
     } catch (err) {
@@ -585,28 +129,166 @@ export function TelehealthVideoRoom({
     }
   }
 
-  // Format call seconds to MM:SS
+  // Initialize Jitsi Meet External API
+  useEffect(() => {
+    let mounted = true
+    const roomName = `carevia-ghana-${appointment.id.replace(/[^a-zA-Z0-9]/g, "")}`
+    const displayName =
+      currentUserRole === "DOCTOR"
+        ? (appointment.doctor?.name ? `Dr. ${appointment.doctor.name} (Physician)` : "Dr. Attending Physician")
+        : (appointment.patient?.name ? `${appointment.patient.name} (Patient)` : "Patient")
+
+    const initJitsi = () => {
+      if (!mounted || !jitsiContainerRef.current) return
+      if (apiRef.current) {
+        try {
+          apiRef.current.dispose()
+        } catch {}
+      }
+
+      // Clear container before mounting
+      jitsiContainerRef.current.innerHTML = ""
+
+      try {
+        const domain = "meet.jit.si"
+        const options = {
+          roomName,
+          parentNode: jitsiContainerRef.current,
+          width: "100%",
+          height: "100%",
+          userInfo: {
+            displayName,
+            email: currentUserRole === "DOCTOR" ? (appointment.doctor?.email || "") : (appointment.patient?.email || ""),
+          },
+          configOverwrite: {
+            startWithAudioMuted: false,
+            startWithVideoMuted: false,
+            prejoinPageEnabled: false,
+            prejoinConfig: { enabled: false },
+            disableDeepLinking: true,
+            deeplinking: { disabled: true },
+            enableWelcomePage: false,
+            enableClosePage: false,
+            disableThirdPartyRequests: true,
+            enableLipSync: true,
+            toolbarButtons: [
+              "microphone",
+              "camera",
+              "desktop",
+              "chat",
+              "tileview",
+              "hangup",
+            ],
+          },
+          interfaceConfigOverwrite: {
+            SHOW_JITSI_WATERMARK: false,
+            SHOW_WATERMARK_FOR_GUESTS: false,
+            SHOW_BRANDING_WATERMARK: false,
+            SHOW_POWERED_BY: false,
+            MOBILE_APP_PROMO: false,
+            APP_NAME: "Carevia Telehealth Ghana",
+            DEFAULT_REMOTE_DISPLAY_NAME: remotePeerName,
+            TOOLBAR_ALWAYS_VISIBLE: false,
+          },
+        }
+
+        const api = new (window as any).JitsiMeetExternalAPI(domain, options)
+        apiRef.current = api
+
+        api.addListener("videoConferenceJoined", () => {
+          if (mounted) setIsLoading(false)
+        })
+
+        api.addListener("videoConferenceLeft", () => {
+          handleExit()
+        })
+
+        api.addListener("readyToClose", () => {
+          handleExit()
+        })
+      } catch (err) {
+        console.error("Failed to initialize Jitsi Meet External API:", err)
+        if (mounted) setIsLoading(false)
+      }
+    }
+
+    // Load Jitsi External API script dynamically if not present
+    if (typeof window !== "undefined") {
+      if ((window as any).JitsiMeetExternalAPI) {
+        initJitsi()
+      } else {
+        const scriptId = "jitsi-external-api-script"
+        let script = document.getElementById(scriptId) as HTMLScriptElement | null
+
+        if (!script) {
+          script = document.createElement("script")
+          script.id = scriptId
+          script.src = "https://meet.jit.si/external_api.js"
+          script.async = true
+          script.onload = () => {
+            if (mounted) initJitsi()
+          }
+          script.onerror = () => {
+            console.error("Failed to load Jitsi external_api.js")
+            if (mounted) setIsLoading(false)
+          }
+          document.body.appendChild(script)
+        } else {
+          script.addEventListener("load", () => {
+            if (mounted) initJitsi()
+          })
+        }
+      }
+    }
+
+    // Call duration counter
+    const timer = setInterval(() => {
+      setCallDuration((c) => c + 1)
+    }, 1000)
+
+    return () => {
+      mounted = false
+      clearInterval(timer)
+      if (apiRef.current) {
+        try {
+          apiRef.current.dispose()
+        } catch {}
+        apiRef.current = null
+      }
+    }
+  }, [appointment.id, currentUserRole])
+
+  // Format call duration MM:SS
   const formatDuration = (sec: number) => {
     const mins = Math.floor(sec / 60)
     const s = sec % 60
     return `${mins.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`
   }
 
-  const isRemoteActive = peerConnected || isDemoMode
+  // Toggle fullscreen
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {})
+      setIsFullscreen(true)
+    } else {
+      document.exitFullscreen().catch(() => {})
+      setIsFullscreen(false)
+    }
+  }
 
   return (
     <div className="relative w-full h-screen bg-[#0a0a0c] text-white flex flex-col overflow-hidden font-sans select-none">
       {/* Top Floating Glass Header Bar */}
       <header className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between p-3 sm:p-5 pointer-events-none">
         {/* Left: Remote Peer Identity Badge */}
-        <div className="flex items-center gap-3 bg-white/10 backdrop-blur-2xl border border-white/15 px-3.5 sm:px-4 py-2 rounded-full pointer-events-auto shadow-2xl">
+        <div className="flex items-center gap-3 bg-slate-900/90 backdrop-blur-2xl border border-white/15 px-3.5 sm:px-4 py-2 rounded-full pointer-events-auto shadow-2xl">
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
           <div className="flex flex-col">
             <span className="font-semibold text-xs sm:text-sm tracking-tight leading-tight text-white">
               {remotePeerName}
             </span>
             <span className="text-[10px] text-white/60 leading-tight">
-              {remotePeerRole} · {currentUserRole === "DOCTOR" ? `Patient (${appointment.patient?.patientProfile?.bloodGroup || "O+"})` : (appointment.doctor?.doctorProfile?.specialty || "Physician")}
+              {remotePeerRole} · {currentUserRole === "DOCTOR" ? `Patient (${appointment.patient?.patientProfile?.bloodGroup || "O+"})` : (appointment.doctor?.doctorProfile?.specialty || "Family Medicine")}
             </span>
           </div>
 
@@ -620,31 +302,16 @@ export function TelehealthVideoRoom({
           </div>
         </div>
 
-        {/* Right: Actions (Presentation Demo Toggle, Drawer, Fullscreen) */}
+        {/* Right: Actions (Clinical Workspace & Fullscreen) */}
         <div className="flex items-center gap-2 pointer-events-auto">
-          {/* Presentation Fail-Safe Toggle: guarantees 2-way call demonstration */}
-          <button
-            type="button"
-            onClick={toggleDemoMode}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold backdrop-blur-xl transition shadow-lg ${
-              isDemoMode
-                ? "bg-emerald-500 text-black border border-emerald-400"
-                : "bg-white/10 hover:bg-white/20 text-white/90 border border-white/15"
-            }`}
-            title="Toggle presentation 2-way consultation view"
-          >
-            <Tv size={13} />
-            <span className="hidden sm:inline">{isDemoMode ? "Live Demo Active" : "Presentation View"}</span>
-          </button>
-
           {currentUserRole === "DOCTOR" && (
             <button
               type="button"
               onClick={() => setShowDrawer(!showDrawer)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold backdrop-blur-xl transition shadow-lg ${
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold backdrop-blur-xl transition shadow-lg cursor-pointer ${
                 showDrawer
                   ? "bg-white text-slate-900 border border-white"
-                  : "bg-white/10 hover:bg-white/20 text-white border border-white/15"
+                  : "bg-slate-900/90 hover:bg-slate-800 text-white border border-white/15"
               }`}
             >
               <FileText size={14} />
@@ -654,8 +321,8 @@ export function TelehealthVideoRoom({
 
           <button
             type="button"
-            onClick={() => setIsFullscreen(!isFullscreen)}
-            className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white transition backdrop-blur-xl shadow-lg"
+            onClick={toggleFullscreen}
+            className="p-2.5 rounded-full bg-slate-900/90 hover:bg-slate-800 border border-white/15 text-white transition backdrop-blur-xl shadow-lg cursor-pointer"
             title="Toggle Fullscreen"
           >
             {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
@@ -664,166 +331,27 @@ export function TelehealthVideoRoom({
       </header>
 
       {/* Main Video Stage Area */}
-      <div className="relative flex-1 w-full h-full flex items-center justify-center p-3 sm:p-5 overflow-hidden">
-        {/* Remote Peer Video Container (Fills Stage) */}
-        <div className="relative w-full h-full rounded-3xl overflow-hidden bg-[#111113] border border-white/10 flex items-center justify-center shadow-2xl">
-          
-          {/* 1. Real Remote Video Stream Element */}
-          <video
-            ref={remoteVideoRef}
-            autoPlay
-            playsInline
-            className={`w-full h-full object-cover transition-opacity duration-300 ${
-              peerConnected ? "opacity-100" : "opacity-0 absolute pointer-events-none"
-            }`}
-          />
-
-          {/* 2. Presentation Live 2-Way Demo Feed (Active if user triggers Presentation View when 2nd device isn't on yet) */}
-          {isDemoMode && !peerConnected && (
-            <div className="relative w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-950 to-black">
-              {/* If local stream exists, mirror it as remote feed for an instant live 2-way demonstration on 1 device */}
-              <video
-                autoPlay
-                playsInline
-                muted
-                ref={(el) => {
-                  if (el && localStreamRef.current) {
-                    el.srcObject = localStreamRef.current
-                  }
-                }}
-                className="w-full h-full object-cover opacity-90 filter brightness-95"
-              />
-              <div className="absolute inset-0 bg-radial from-transparent to-black/60 pointer-events-none" />
-
-              {/* Verified Remote Overlay Badge */}
-              <div className="absolute top-20 left-6 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-xs text-white">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="font-semibold">{remotePeerName}</span>
-                <span className="text-white/60">({remotePeerRole})</span>
-                <span className="text-emerald-400 text-[10px] font-mono">· 720p HD</span>
-              </div>
+      <div className="relative flex-1 w-full h-full flex items-center justify-center overflow-hidden">
+        {/* Loading Overlay */}
+        {isLoading && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-950 text-center space-y-3 p-4">
+            <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-white/10 flex items-center justify-center text-emerald-400 shadow-xl">
+              <Loader2 size={24} className="animate-spin" />
             </div>
-          )}
-
-          {/* 3. Waiting State / High-Fidelity Remote Stream Standby */}
-          {!isRemoteActive && (
-            <div className="flex flex-col items-center justify-center text-center p-8 max-w-md space-y-6 animate-in fade-in duration-300">
-              <div className="relative">
-                <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-full bg-gradient-to-b from-white/20 to-white/5 border border-white/20 flex items-center justify-center shadow-2xl backdrop-blur-md">
-                  <User size={56} className="text-white/80" />
-                </div>
-                {/* Audio pulse ring */}
-                <div className="absolute inset-0 rounded-full border-2 border-emerald-400/40 animate-ping pointer-events-none" />
-                <div className="absolute -bottom-1 right-2 bg-emerald-500 text-black p-1.5 rounded-full shadow-lg ring-4 ring-[#111113]">
-                  <Activity size={14} className="animate-spin" />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
-                  {remotePeerName}
-                </h2>
-                <p className="text-xs text-white/60">
-                  {remotePeerRole} ·{" "}
-                  {currentUserRole === "DOCTOR"
-                    ? "Blood: " + (appointment.patient?.patientProfile?.bloodGroup || "O+")
-                    : appointment.doctor?.doctorProfile?.specialty || "Family Medicine"}
-                </p>
-                <div className="pt-2 flex items-center justify-center gap-2 text-xs text-emerald-400 font-medium">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>{signalingStatus}</span>
-                </div>
-              </div>
-
-              {/* Quick Presentation Demo Button right on the screen */}
-              <button
-                type="button"
-                onClick={toggleDemoMode}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-semibold text-white transition backdrop-blur-xl shadow-lg cursor-pointer"
-              >
-                <Tv size={14} className="text-emerald-400" />
-                <span>Activate Presentation 2-Way View</span>
-              </button>
-
-              {/* Patient Vitals Card (Apple Health style) */}
-              {currentUserRole === "DOCTOR" && (
-                <div className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 backdrop-blur-xl grid grid-cols-3 gap-3 text-center text-xs">
-                  <div>
-                    <span className="text-white/40 block text-[10px] uppercase font-semibold">Pulse</span>
-                    <span className="text-white font-mono font-bold text-sm">74 bpm</span>
-                  </div>
-                  <div className="border-x border-white/10">
-                    <span className="text-white/40 block text-[10px] uppercase font-semibold">Blood Press.</span>
-                    <span className="text-white font-mono font-bold text-sm">118/78</span>
-                  </div>
-                  <div>
-                    <span className="text-white/40 block text-[10px] uppercase font-semibold">SpO2</span>
-                    <span className="text-white font-mono font-bold text-sm">99%</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Connected Live Peer Label (Shows when connected) */}
-          {peerConnected && (
-            <div className="absolute top-20 left-6 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-xs text-white">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="font-semibold">{remotePeerName}</span>
-              <span className="text-white/60">({remotePeerRole})</span>
-              <span className="text-emerald-400 text-[10px] font-mono">· Live Video Active</span>
-            </div>
-          )}
-
-          {/* Remote Audio Mute Notice on Mobile */}
-          {remoteAudioMuted && peerConnected && (
-            <button
-              onClick={() => {
-                if (remoteVideoRef.current) {
-                  remoteVideoRef.current.muted = false
-                  setRemoteAudioMuted(false)
-                }
-              }}
-              className="absolute top-20 right-6 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/80 backdrop-blur-md text-slate-950 font-bold text-xs shadow-lg animate-bounce"
-            >
-              <VolumeX size={14} />
-              <span>Tap to Unmute Audio</span>
-            </button>
-          )}
-
-          {/* Picture-in-Picture Local Self View (Apple FaceTime Corner PIP) */}
-          <div className="absolute bottom-24 right-5 sm:right-7 w-36 sm:w-56 h-24 sm:h-36 rounded-2xl overflow-hidden bg-[#1c1c1e] border border-white/20 shadow-2xl z-20 backdrop-blur-md transition-all group">
-            {cameraOn ? (
-              <video
-                ref={localVideoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover transform -scale-x-100"
-              />
-            ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center text-white/50 text-xs gap-1">
-                <VideoOff size={20} className="text-white/40" />
-                <span className="text-[10px]">Camera Off</span>
-              </div>
-            )}
-
-            {/* Self PIP overlay tag */}
-            <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[10px] bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-lg text-white/90 font-medium">
-              <span>You ({currentUserRole === "DOCTOR" ? "Dr. Kwame" : "Patient"})</span>
-              <div className="flex items-center gap-1">
-                {audioLevel > 5 && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                )}
-                {!micOn && <MicOff size={10} className="text-rose-400" />}
-              </div>
-            </div>
+            <p className="text-sm font-semibold text-white">Connecting Secure Consultation Room...</p>
+            <p className="text-xs text-white/50">Establishing encrypted WebRTC video bridge</p>
           </div>
-        </div>
+        )}
+
+        {/* Jitsi Meet Video Container */}
+        <div
+          ref={jitsiContainerRef}
+          className="w-full h-full bg-[#111113] overflow-hidden"
+        />
 
         {/* Doctor Clinical Workspace Slide-out (Apple Glass Sheet) */}
         {currentUserRole === "DOCTOR" && showDrawer && (
-          <aside className="absolute top-5 right-5 bottom-24 w-full max-w-md bg-white text-slate-900 rounded-3xl border border-slate-200 shadow-2xl z-30 flex flex-col overflow-hidden animate-in slide-in-from-right duration-200">
+          <aside className="absolute top-5 right-5 bottom-5 w-full max-w-md bg-white text-slate-900 rounded-3xl border border-slate-200 shadow-2xl z-30 flex flex-col overflow-hidden animate-in slide-in-from-right duration-200">
             {/* Sheet Header */}
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
               <div>
@@ -836,7 +364,7 @@ export function TelehealthVideoRoom({
               <button
                 type="button"
                 onClick={() => setShowDrawer(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition"
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition cursor-pointer"
               >
                 <X size={16} />
               </button>
@@ -847,9 +375,9 @@ export function TelehealthVideoRoom({
               <button
                 type="button"
                 onClick={() => setActiveTab("summary")}
-                className={`flex-1 py-1.5 px-3 rounded-lg font-medium transition ${
+                className={`flex-1 py-1.5 px-3 rounded-lg font-medium transition cursor-pointer ${
                   activeTab === "summary"
-                    ? "bg-white text-slate-900 shadow-xs"
+                    ? "bg-white text-slate-900 shadow-xs font-semibold"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
@@ -858,9 +386,9 @@ export function TelehealthVideoRoom({
               <button
                 type="button"
                 onClick={() => setActiveTab("notes")}
-                className={`flex-1 py-1.5 px-3 rounded-lg font-medium transition ${
+                className={`flex-1 py-1.5 px-3 rounded-lg font-medium transition cursor-pointer ${
                   activeTab === "notes"
-                    ? "bg-white text-slate-900 shadow-xs"
+                    ? "bg-white text-slate-900 shadow-xs font-semibold"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
@@ -869,9 +397,9 @@ export function TelehealthVideoRoom({
               <button
                 type="button"
                 onClick={() => setActiveTab("rx")}
-                className={`flex-1 py-1.5 px-3 rounded-lg font-medium transition ${
+                className={`flex-1 py-1.5 px-3 rounded-lg font-medium transition cursor-pointer ${
                   activeTab === "rx"
-                    ? "bg-white text-slate-900 shadow-xs"
+                    ? "bg-white text-slate-900 shadow-xs font-semibold"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
@@ -903,6 +431,22 @@ export function TelehealthVideoRoom({
                       </div>
                     </div>
                   )}
+
+                  {/* Patient Vitals Quick-check Card */}
+                  <div className="w-full bg-slate-50 border border-slate-200/80 rounded-2xl p-4 grid grid-cols-3 gap-3 text-center text-xs">
+                    <div>
+                      <span className="text-slate-400 block text-[10px] uppercase font-semibold">Pulse</span>
+                      <span className="text-slate-900 font-mono font-bold text-sm">74 bpm</span>
+                    </div>
+                    <div className="border-x border-slate-200">
+                      <span className="text-slate-400 block text-[10px] uppercase font-semibold">Blood Press.</span>
+                      <span className="text-slate-900 font-mono font-bold text-sm">118/78</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px] uppercase font-semibold">SpO2</span>
+                      <span className="text-slate-900 font-mono font-bold text-sm">99%</span>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -969,63 +513,6 @@ export function TelehealthVideoRoom({
           </aside>
         )}
       </div>
-
-      {/* Bottom Floating FaceTime Capsule Controls */}
-      <footer className="absolute bottom-5 left-0 right-0 z-30 flex items-center justify-center pointer-events-none">
-        <div className="flex items-center gap-3 sm:gap-4 bg-white/10 backdrop-blur-2xl border border-white/20 p-2.5 sm:p-3 rounded-full shadow-2xl pointer-events-auto">
-          {/* Mic Toggle */}
-          <button
-            type="button"
-            onClick={toggleMic}
-            className={`w-12 h-12 rounded-full flex items-center justify-center transition shadow-md ${
-              micOn
-                ? "bg-white/15 hover:bg-white/25 text-white"
-                : "bg-rose-500 text-white"
-            }`}
-            title={micOn ? "Mute Microphone" : "Unmute Microphone"}
-          >
-            {micOn ? <Mic size={20} /> : <MicOff size={20} />}
-          </button>
-
-          {/* Camera Toggle */}
-          <button
-            type="button"
-            onClick={toggleCamera}
-            className={`w-12 h-12 rounded-full flex items-center justify-center transition shadow-md ${
-              cameraOn
-                ? "bg-white/15 hover:bg-white/25 text-white"
-                : "bg-rose-500 text-white"
-            }`}
-            title={cameraOn ? "Turn Camera Off" : "Turn Camera On"}
-          >
-            {cameraOn ? <VideoIcon size={20} /> : <VideoOff size={20} />}
-          </button>
-
-          {/* Screen Share Toggle */}
-          <button
-            type="button"
-            onClick={toggleScreenShare}
-            className={`w-12 h-12 rounded-full flex items-center justify-center transition shadow-md ${
-              isScreenSharing
-                ? "bg-blue-500 text-white"
-                : "bg-white/15 hover:bg-white/25 text-white"
-            }`}
-            title="Share Screen"
-          >
-            <Share2 size={20} />
-          </button>
-
-          {/* End Call Button */}
-          <button
-            type="button"
-            onClick={handleEndCall}
-            className="w-12 h-12 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center transition shadow-lg active:scale-95"
-            title="Leave / End Consultation"
-          >
-            <PhoneOff size={20} />
-          </button>
-        </div>
-      </footer>
     </div>
   )
 }
