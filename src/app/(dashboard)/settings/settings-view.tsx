@@ -106,7 +106,11 @@ export function SettingsView({ user }: SettingsViewProps) {
     try {
       const res = await fetch("/api/user/delete", { method: "DELETE" })
       if (res.ok) {
-        await signOut({ callbackUrl: "/login?deleted=true" })
+        try {
+          await signOut({ redirect: false })
+        } finally {
+          window.location.href = "/login?deleted=true"
+        }
       } else {
         setErrorMsg("Failed to erase account. Please contact support.")
         setErasing(false)
