@@ -34,7 +34,16 @@ const ROLE_DASHBOARD: Record<string, string> = {
   ADMIN: "/admin",
 }
 
-const PUBLIC_ROUTES = ["/", "/login", "/register", "/privacy", "/terms", "/articles", "/outbreaks"]
+const PUBLIC_ROUTES = [
+  "/",
+  "/login",
+  "/register",
+  "/privacy",
+  "/terms",
+  "/articles",
+  "/outbreaks",
+  "/images",
+]
 
 export default auth((req) => {
   const { pathname } = req.nextUrl
@@ -76,5 +85,7 @@ export default auth((req) => {
 })
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    "/((?!api|_next/static|_next/image|images|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
 }
