@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { redirect } from "next/navigation"
 import Link from "next/link"
 import { Video, ArrowLeft, Clock, CheckCircle2, Calendar } from "lucide-react"
+import { FormattedAiSummary } from "@/components/shared/formatted-ai-summary"
 
 export const instant = false
 
@@ -139,12 +140,10 @@ export default async function PatientConsultationsPage() {
               </div>
               {appt.aiSummary && (
                 <div className="mt-4 pt-4 border-t border-slate-100">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
                     Clinical Summary
                   </p>
-                  <p className="text-sm text-slate-700 leading-relaxed">
-                    {appt.aiSummary}
-                  </p>
+                  <FormattedAiSummary summary={appt.aiSummary} />
                 </div>
               )}
             </div>

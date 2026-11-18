@@ -16,6 +16,7 @@ import {
   CreditCard,
   RotateCcw,
 } from "lucide-react"
+import { FormattedAiSummary } from "@/components/shared/formatted-ai-summary"
 
 interface AppointmentCardProps {
   appointment: {
@@ -220,7 +221,7 @@ export function DoctorAppointmentCard({ appointment }: AppointmentCardProps) {
 
       {/* Gemini AI Clinical Summary */}
       {appointment.aiSummary && (
-        <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-2">
+        <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-900 flex items-center gap-1.5">
               <Sparkles size={14} className="text-slate-700" />
@@ -231,9 +232,7 @@ export function DoctorAppointmentCard({ appointment }: AppointmentCardProps) {
             </span>
           </div>
 
-          <div className="text-xs text-slate-700 leading-relaxed whitespace-pre-line pl-0.5 font-sans">
-            {appointment.aiSummary}
-          </div>
+          <FormattedAiSummary summary={appointment.aiSummary} />
         </div>
       )}
 

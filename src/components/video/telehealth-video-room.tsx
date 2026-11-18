@@ -22,6 +22,7 @@ import {
   Minimize2,
   VolumeX,
 } from "lucide-react"
+import { FormattedAiSummary } from "@/components/shared/formatted-ai-summary"
 
 export interface TelehealthAppointment {
   id: string
@@ -758,14 +759,12 @@ export function TelehealthVideoRoom({
                   )}
 
                   {appointment.aiSummary && (
-                    <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2">
+                    <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-3">
                       <div className="flex items-center gap-1.5 font-bold text-slate-900">
                         <Sparkles size={14} className="text-slate-700" />
                         <span>Gemini Clinical Intake Summary</span>
                       </div>
-                      <div className="whitespace-pre-line text-slate-600 leading-relaxed font-sans text-xs">
-                        {appointment.aiSummary}
-                      </div>
+                      <FormattedAiSummary summary={appointment.aiSummary} />
                     </div>
                   )}
                 </div>

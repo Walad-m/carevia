@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import Image from "next/image"
 import {
   ArrowRight,
   ShieldCheck,
@@ -61,49 +62,59 @@ export function HomeHeroSection() {
         {/* Grand Apple Device Mockup / Consultation Showpiece */}
         <div className="mt-14 sm:mt-20 max-w-4xl mx-auto">
           <div className="rounded-[2.5rem] bg-[#f5f5f7] p-3 sm:p-4 border border-black/[0.08] shadow-2xl">
-            {/* Inner Display Screen */}
+            {/* Inner Display Screen with Real Consultation Video Simulation */}
             <div className="rounded-[2rem] bg-slate-950 text-white overflow-hidden shadow-inner relative aspect-[16/10] sm:aspect-[16/9] flex flex-col justify-between p-4 sm:p-8">
-              
+              {/* Doctor Background Video Still */}
+              <Image
+                src="/images/doctor-call.jpg"
+                alt="Dr. Kwame Mensah Telehealth Consultation"
+                fill
+                priority
+                className="object-cover object-center"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/30 to-slate-950/70 pointer-events-none" />
+
               {/* Screen Top Bar */}
               <div className="flex items-center justify-between z-10">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/15">
                   <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
                   <div className="text-left">
                     <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-sm sm:text-base">Dr. Kwame Mensah</span>
-                      <CheckCircle2 size={15} className="text-emerald-400" />
+                      <span className="font-semibold text-xs sm:text-sm">Dr. Kwame Mensah</span>
+                      <CheckCircle2 size={14} className="text-emerald-400" />
                     </div>
-                    <span className="text-[11px] text-slate-400 font-mono">
+                    <span className="text-[10px] text-slate-300 font-mono block">
                       General Practice · MDC/GP/2019/0421
                     </span>
                   </div>
                 </div>
 
-                <div className="hidden sm:flex items-center gap-2 text-xs font-mono bg-white/10 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-slate-300">
+                <div className="hidden sm:flex items-center gap-2 text-xs font-mono bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/15 text-slate-200">
                   <ShieldCheck size={13} className="text-emerald-400" />
                   <span>256-Bit Encrypted Call</span>
                 </div>
               </div>
 
-              {/* Center Simulation: Clean FaceTime Aesthetics */}
-              <div className="my-auto text-center space-y-2 py-6">
-                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-b from-slate-700 to-slate-900 mx-auto flex items-center justify-center border-2 border-white/20 shadow-xl">
-                  <span className="font-semibold text-2xl sm:text-3xl tracking-tight text-white">KM</span>
-                </div>
-                <div>
-                  <p className="text-sm sm:text-base font-medium text-slate-200">
-                    Live Video Session Active
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    Kofi Boateng (Patient) & Dr. Kwame Mensah
-                  </p>
+              {/* Center Overlay: Clean FaceTime Aesthetics */}
+              <div className="my-auto text-center z-10 space-y-2 py-4">
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-xs text-white shadow-lg">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="font-semibold">Live Video Consultation Active</span>
+                  <span className="text-white/60">· Kofi Boateng & Dr. Kwame Mensah</span>
                 </div>
               </div>
 
               {/* Patient PiP (Picture in Picture) preview in corner */}
-              <div className="absolute right-4 bottom-20 sm:right-8 sm:bottom-24 w-24 h-32 sm:w-32 sm:h-44 rounded-2xl bg-slate-800 border-2 border-white/20 shadow-2xl overflow-hidden flex flex-col justify-end p-2.5 text-left">
-                <span className="text-[10px] font-medium text-white/90 bg-black/60 px-1.5 py-0.5 rounded-md inline-block w-fit">
-                  You
+              <div className="absolute right-4 bottom-20 sm:right-8 sm:bottom-24 w-28 h-36 sm:w-36 sm:h-48 rounded-2xl border-2 border-white/30 shadow-2xl overflow-hidden z-20">
+                <Image
+                  src="/images/patient-call.jpg"
+                  alt="Patient Kofi Boateng"
+                  fill
+                  className="object-cover object-center"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none" />
+                <span className="absolute bottom-2 left-2 text-[10px] font-semibold text-white bg-black/70 backdrop-blur-md px-2 py-0.5 rounded-md border border-white/10">
+                  You (Kofi Boateng)
                 </span>
               </div>
 

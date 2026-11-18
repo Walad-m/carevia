@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { redirect } from "next/navigation"
 import Link from "next/link"
 import { PatientVideoRoomButton } from "@/components/video/patient-video-room-button"
+import { FormattedAiSummary } from "@/components/shared/formatted-ai-summary"
 import {
   Calendar,
   Clock,
@@ -215,14 +216,12 @@ export default async function PatientAppointmentsPage() {
 
                 {/* AI Summary Card */}
                 {apt.aiSummary && (
-                  <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-2">
+                  <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-3">
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900">
                       <Sparkles size={14} className="text-slate-700" />
                       Gemini Clinical Intake Summary (Prepared for Doctor)
                     </div>
-                    <div className="text-xs text-slate-600 leading-relaxed whitespace-pre-line pl-1 font-sans">
-                      {apt.aiSummary}
-                    </div>
+                    <FormattedAiSummary summary={apt.aiSummary} />
                   </div>
                 )}
 
