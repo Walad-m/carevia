@@ -1,135 +1,94 @@
+"use client"
+
 import Link from "next/link"
 import { Check, ArrowRight } from "lucide-react"
 
 export function PricingSection() {
   return (
-    <section id="pricing" className="py-20 sm:py-24 bg-white border-b border-slate-200/80 font-sans">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="text-center max-w-2xl mx-auto mb-16 space-y-3">
-          <div className="inline-flex items-center gap-1.5 bg-slate-100 border border-slate-200 text-slate-800 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider">
-            Transparent Pricing
-          </div>
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-            Certified healthcare with zero hidden fees.
-          </h2>
-          <p className="text-slate-600 text-sm sm:text-base leading-relaxed">
-            Every consultation is discounted 20% below standard private clinic rates and payable securely via Mobile Money or Card.
-          </p>
-        </div>
+    <section id="pricing" className="py-24 sm:py-32 bg-white font-sans">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        
+        {/* Eyebrow */}
+        <p className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-3">
+          Transparent Pricing
+        </p>
 
-        {/* Pricing Cards Grid */}
-        <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+        {/* Title */}
+        <h2 className="text-4xl sm:text-5xl font-semibold tracking-tight text-slate-950 leading-[1.1]">
+          One flat rate. <br className="hidden sm:inline" />
+          <span className="text-slate-400">No surprises.</span>
+        </h2>
+
+        <p className="mt-4 text-base sm:text-lg text-slate-500 max-w-xl mx-auto font-normal">
+          Fair, transparent healthcare pricing for every Ghanaian. Pay only when you need care.
+        </p>
+
+        {/* Apple Style Focused Pricing Card */}
+        <div className="mt-12 sm:mt-16 bg-[#f5f5f7] rounded-[2.5rem] p-8 sm:p-12 border border-black/[0.06] text-left max-w-2xl mx-auto shadow-xs">
           
-          {/* Plan 1: General Practice */}
-          <div className="bg-white rounded-3xl p-8 border border-slate-200/80 flex flex-col justify-between shadow-xs hover:border-slate-300 transition">
+          <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 pb-6 border-b border-slate-200/80">
             <div>
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Primary Care
-                </span>
-                <span className="text-[11px] font-semibold bg-slate-100 text-slate-800 border border-slate-200 px-2.5 py-0.5 rounded-full">
-                  Save 20%
-                </span>
-              </div>
-
-              <h3 className="text-xl font-bold text-slate-900">
-                General Practice / Family Medicine
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">
+                Standard Telehealth Consultation
+              </span>
+              <h3 className="text-2xl font-semibold text-slate-950 tracking-tight">
+                General Practice & Family Medicine
               </h3>
-              <p className="text-xs text-slate-500 mt-1 mb-6 leading-relaxed">
-                Fever, malaria, respiratory coughs, digestive discomfort, tension headaches & routine ailments.
-              </p>
-
-              <div className="flex items-baseline gap-2 mb-6">
-                <span className="text-4xl font-extrabold text-slate-900">GH₵ 80</span>
-                <span className="text-sm font-semibold text-slate-400 line-through">GH₵ 100</span>
-                <span className="text-xs text-slate-500">/ consult</span>
-              </div>
-
-              <ul className="space-y-3 text-xs text-slate-700">
-                <li className="flex items-center gap-2.5">
-                  <Check size={16} className="text-slate-900 shrink-0" />
-                  <span>Clinical intake distillation for physician</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check size={16} className="text-slate-900 shrink-0" />
-                  <span>MDC Ghana Accredited Family Practitioner</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check size={16} className="text-slate-900 shrink-0" />
-                  <span>Two-way encrypted video consultation</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check size={16} className="text-slate-900 shrink-0" />
-                  <span>Official digital prescription & clinical notes</span>
-                </li>
-              </ul>
             </div>
-
-            <Link
-              href="/register"
-              className="mt-8 w-full inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-black text-white font-semibold text-xs sm:text-sm py-3.5 rounded-full transition shadow-xs active:scale-95 cursor-pointer"
-            >
-              <span>Book General Practice Consult</span>
-              <ArrowRight size={14} />
-            </Link>
+            
+            <div className="text-left sm:text-right shrink-0">
+              <div className="flex items-baseline gap-2">
+                <span className="text-4xl sm:text-5xl font-bold tracking-tight text-slate-950">
+                  GH₵ 80
+                </span>
+                <span className="text-sm text-slate-400 line-through">GH₵ 100</span>
+              </div>
+              <span className="text-xs text-slate-500 font-medium block mt-0.5">
+                Save 20% · Per session
+              </span>
+            </div>
           </div>
 
-          {/* Plan 2: Specialist Care */}
-          <div className="bg-white rounded-3xl p-8 border border-slate-200/80 flex flex-col justify-between shadow-xs hover:border-slate-300 transition">
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Specialist Care
-                </span>
-                <span className="text-[11px] font-semibold bg-slate-100 text-slate-800 border border-slate-200 px-2.5 py-0.5 rounded-full">
-                  Save 20%
-                </span>
-              </div>
-
-              <h3 className="text-xl font-bold text-slate-900">
-                Specialist Consultation
-              </h3>
-              <p className="text-xs text-slate-500 mt-1 mb-6 leading-relaxed">
-                Paediatrics, Cardiology, Obstetrics & Gynaecology, Internal Medicine & Dermatology.
-              </p>
-
-              <div className="flex items-baseline gap-2 mb-6">
-                <span className="text-4xl font-extrabold text-slate-900">GH₵ 120</span>
-                <span className="text-sm font-semibold text-slate-400 line-through">GH₵ 150</span>
-                <span className="text-xs text-slate-500">/ consult</span>
-              </div>
-
-              <ul className="space-y-3 text-xs text-slate-700">
-                <li className="flex items-center gap-2.5">
-                  <Check size={16} className="text-slate-900 shrink-0" />
-                  <span>Specialist clinical evaluation & diagnosis</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check size={16} className="text-slate-900 shrink-0" />
-                  <span>MDC Verified Senior Specialist / Consultant</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check size={16} className="text-slate-900 shrink-0" />
-                  <span>Comprehensive teleconsultation session</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check size={16} className="text-slate-900 shrink-0" />
-                  <span>Detailed care plan & electronic prescription</span>
-                </li>
-              </ul>
+          {/* Features */}
+          <div className="py-8 space-y-3.5 text-sm text-slate-700 font-normal">
+            <div className="flex items-center gap-3">
+              <Check size={16} className="text-slate-950 shrink-0 stroke-[2.5]" />
+              <span>Two-way encrypted HD video with an accredited Ghanaian doctor</span>
             </div>
+            <div className="flex items-center gap-3">
+              <Check size={16} className="text-slate-950 shrink-0 stroke-[2.5]" />
+              <span>Voice or text symptom intake for rapid physician preparation</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <Check size={16} className="text-slate-950 shrink-0 stroke-[2.5]" />
+              <span>Official MDC-signed digital prescription valid nationwide</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <Check size={16} className="text-slate-950 shrink-0 stroke-[2.5]" />
+              <span>Automatic doctor fallback routing if attending doctor is occupied</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <Check size={16} className="text-slate-950 shrink-0 stroke-[2.5]" />
+              <span>Pay instantly with MTN Mobile Money, Telecel Cash, or Card</span>
+            </div>
+          </div>
 
+          {/* Action */}
+          <div className="pt-6 border-t border-slate-200/80">
             <Link
               href="/register"
-              className="mt-8 w-full inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-black text-white font-semibold text-xs sm:text-sm py-3.5 rounded-full transition shadow-xs active:scale-95 cursor-pointer"
+              className="w-full inline-flex items-center justify-center gap-2 bg-slate-950 hover:bg-black text-white font-medium text-sm sm:text-base py-4 rounded-full transition shadow-xs active:scale-95"
             >
-              <span>Book Specialist Consult</span>
-              <ArrowRight size={14} />
+              <span>Book a Consultation (GH₵ 80)</span>
+              <ArrowRight size={16} />
             </Link>
+            <p className="text-center text-xs text-slate-400 mt-3 font-normal">
+              No subscription or recurring charges. Instant receipt upon checkout.
+            </p>
           </div>
 
         </div>
+
       </div>
     </section>
   )

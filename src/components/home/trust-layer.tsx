@@ -1,3 +1,5 @@
+"use client"
+
 import { ShieldCheck, Lock, AlertTriangle, UserCheck } from "lucide-react"
 
 const TRUST_PILLARS = [
@@ -7,54 +9,58 @@ const TRUST_PILLARS = [
     icon: ShieldCheck,
   },
   {
-    title: "Privacy by Design (Act 843)",
-    desc: "Your clinical notes, voice recordings, and consult records are strictly confidential under Ghana's Data Protection Act, 2012. We never sell or share patient data.",
+    title: "Act 843 Medical Privacy",
+    desc: "Your clinical notes, voice recordings, and consultation records are strictly confidential under Ghana's Data Protection Act, 2012. We never share patient data.",
     icon: Lock,
   },
   {
     title: "Emergency Red Flagging",
-    desc: "Intake continuously screens for high-risk cardiac, stroke, pediatric, and respiratory emergencies, instantly redirecting to 112 Ghana Emergency dispatch.",
+    desc: "Intake continuously screens for high-risk cardiac, stroke, and pediatric emergencies, instantly redirecting to the 112 Ghana Emergency dispatch.",
     icon: AlertTriangle,
   },
   {
     title: "Always Human Oversight",
-    desc: "AI acts strictly as a clinical intake assistant. It never provides speculative medical diagnoses. Licensed medical doctors make all clinical evaluations and prescriptions.",
+    desc: "AI acts strictly as a clinical intake assistant. Licensed medical doctors make 100% of diagnostic evaluations, prescriptions, and care plans.",
     icon: UserCheck,
   },
 ]
 
 export function TrustLayerSection() {
   return (
-    <section id="trust" className="py-20 sm:py-24 bg-[#0a0a0c] text-white font-sans border-b border-white/10">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <section id="privacy" className="py-24 sm:py-32 bg-[#f5f5f7] font-sans border-t border-black/[0.05]">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        {/* Header */}
         <div className="text-center max-w-2xl mx-auto mb-16 space-y-3">
-          <div className="inline-flex items-center gap-1.5 bg-white/10 text-white border border-white/15 px-3.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider">
-            Security & Clinical Rigor
-          </div>
-          <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
-            The Carevia Trust Layer
+          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+            Trust & Compliance
+          </p>
+          <h2 className="text-4xl sm:text-5xl font-semibold tracking-tight text-slate-950 leading-[1.1]">
+            Privacy is a fundamental right. <br className="hidden sm:inline" />
+            <span className="text-slate-400">Especially in healthcare.</span>
           </h2>
-          <p className="text-slate-400 text-sm sm:text-base leading-relaxed">
-            Built to provide Ghanaian patients and families with complete clinical confidence and legal compliance.
+          <p className="text-base sm:text-lg text-slate-500 font-normal">
+            Built from the ground up to respect Ghanaian clinical guidelines and data sovereignty.
           </p>
         </div>
 
+        {/* 4 Clean Cards */}
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {TRUST_PILLARS.map((pillar) => {
             const Icon = pillar.icon
             return (
               <div
                 key={pillar.title}
-                className="bg-white/5 border border-white/10 rounded-3xl p-7 hover:border-white/20 transition flex flex-col justify-between"
+                className="bg-white rounded-3xl p-7 border border-black/[0.05] shadow-xs flex flex-col justify-between"
               >
                 <div>
-                  <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/15 text-white flex items-center justify-center mb-5">
-                    <Icon size={22} />
+                  <div className="w-10 h-10 rounded-2xl bg-[#f5f5f7] flex items-center justify-center text-slate-950 mb-5">
+                    <Icon size={19} className="stroke-[2]" />
                   </div>
-                  <h3 className="font-bold text-base text-white mb-2">
+                  <h3 className="font-semibold text-base text-slate-950 mb-2">
                     {pillar.title}
                   </h3>
-                  <p className="text-xs text-slate-400 leading-relaxed font-sans">
+                  <p className="text-xs text-slate-500 leading-relaxed font-normal">
                     {pillar.desc}
                   </p>
                 </div>
@@ -62,6 +68,7 @@ export function TrustLayerSection() {
             )
           })}
         </div>
+
       </div>
     </section>
   )

@@ -1,5 +1,4 @@
-import Link from "next/link"
-import { AlertTriangle, ChevronRight, Activity } from "lucide-react"
+import { Activity, ArrowRight } from "lucide-react"
 
 interface OutbreakAlertItem {
   id: string
@@ -12,31 +11,24 @@ interface OutbreakAlertItem {
 export function OutbreakBanner({ alerts }: { alerts: OutbreakAlertItem[] }) {
   if (!alerts || alerts.length === 0) return null
 
-  // Pick top critical/warning alert
   const topAlert = alerts[0]
 
   return (
-    <div className="bg-gradient-to-r from-amber-600 via-rose-600 to-amber-700 text-white text-xs sm:text-sm font-medium py-2.5 px-4 shadow-inner">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 overflow-hidden">
-          <span className="inline-flex items-center gap-1 bg-white/20 px-2 py-0.5 rounded-full text-[11px] font-bold tracking-wide uppercase shrink-0">
-            <Activity size={12} className="animate-spin" />
-            GHS Outbreak Radar
-          </span>
-          <span className="font-semibold truncate">
-            {topAlert.disease} Alert: {topAlert.region}
-          </span>
-          <span className="hidden md:inline text-white/80 text-xs">
-            — {topAlert.title}
-          </span>
-        </div>
-
+    <div className="bg-[#f5f5f7] border-b border-slate-200/60 py-2.5 px-4 text-xs font-normal text-slate-600 font-sans">
+      <div className="max-w-7xl mx-auto flex items-center justify-center gap-2 text-center">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-slate-900" />
+        <span className="font-medium text-slate-900">
+          Public Health Alert ({topAlert.region}):
+        </span>
+        <span className="truncate max-w-md text-slate-600">
+          {topAlert.title}
+        </span>
         <a
-          href="#outbreak-radar"
-          className="shrink-0 inline-flex items-center gap-1 font-semibold text-white/95 hover:text-white bg-black/20 hover:bg-black/30 px-2.5 py-1 rounded-md text-xs transition"
+          href="#features"
+          className="inline-flex items-center gap-0.5 text-slate-900 hover:text-black font-medium underline underline-offset-4 decoration-slate-300 ml-1.5 transition"
         >
-          <span>View Guidelines</span>
-          <ChevronRight size={13} />
+          <span>Learn more</span>
+          <ArrowRight size={11} />
         </a>
       </div>
     </div>

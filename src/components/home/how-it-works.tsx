@@ -1,92 +1,96 @@
-import { MessageSquare, UserCheck, Video, FileText, ArrowRight } from "lucide-react"
+"use client"
+
+import { MessageSquare, Video, FileText, Smartphone, ArrowRight } from "lucide-react"
 import Link from "next/link"
 
-const STEPS = [
+const FEATURES = [
   {
-    number: "01",
-    title: "Describe Your Symptoms",
-    desc: "Speak or write in plain everyday terms. No medical jargon required. Record an audio note or describe how you feel naturally.",
+    title: "Intelligent Triage",
+    desc: "Speak naturally in English or local Ghanaian languages, or type how you feel. Clinical AI analyzes symptoms so your doctor is prepared before you say hello.",
+    badge: "Smart Intake",
     icon: MessageSquare,
   },
   {
-    number: "02",
-    title: "Smart Physician Matching",
-    desc: "Your intake is organized and instantly paired with an accredited Ghanaian doctor in General Practice or the required specialty.",
-    icon: UserCheck,
-  },
-  {
-    number: "03",
-    title: "Live Video Consultation",
-    desc: "Connect directly with your physician over secure, high-definition two-way video with real-time vitals review and discussion.",
+    title: "FaceTime-Quality Video",
+    desc: "Connect instantly with verified Ghanaian physicians over low-bandwidth WebRTC video engineered to stay stable across MTN, Telecel, and AT networks.",
+    badge: "Encrypted HD",
     icon: Video,
   },
   {
-    number: "04",
-    title: "Digital Rx & Records",
-    desc: "Receive official MDC-signed electronic prescriptions and consultation summaries stored securely in your patient portal.",
+    title: "Official Digital Prescriptions",
+    desc: "Receive MDC-compliant digital prescriptions and doctor clinical notes saved securely in your portal. Take them to any licensed pharmacy nationwide.",
+    badge: "Paperless Care",
     icon: FileText,
+  },
+  {
+    title: "Instant Mobile Money",
+    desc: "Simple, transparent GH₵ 80 flat fee. Authorize directly from your phone with MTN MoMo, Telecel Cash, or credit/debit card with zero hidden charges.",
+    badge: "Instant Checkout",
+    icon: Smartphone,
   },
 ]
 
 export function HowItWorksSection() {
   return (
-    <section id="how-it-works" className="py-20 sm:py-24 bg-slate-50/70 border-b border-slate-200/80 font-sans">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="text-center max-w-2xl mx-auto mb-16 space-y-3">
-          <div className="inline-flex items-center gap-1.5 bg-slate-100 border border-slate-200 text-slate-800 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider">
+    <section id="features" className="py-24 sm:py-32 bg-[#f5f5f7] font-sans">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        {/* Apple-style Section Header */}
+        <div className="text-center max-w-3xl mx-auto mb-16 sm:mb-20 space-y-4">
+          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
             Care Pathway
-          </div>
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-            From concern to care in four simple steps.
+          </p>
+          <h2 className="text-4xl sm:text-5xl font-semibold tracking-tight text-slate-950 leading-[1.1]">
+            Care designed for simplicity. <br className="hidden sm:inline" />
+            <span className="text-slate-400">At every touchpoint.</span>
           </h2>
-          <p className="text-slate-600 text-sm sm:text-base leading-relaxed">
-            Carevia eliminates crowded hospital OPD waiting rooms, connecting you with verified doctors from home or work.
+          <p className="text-base sm:text-lg text-slate-500 max-w-xl mx-auto font-normal">
+            No crowded waiting rooms, no traffic delays, no guesswork. Immediate access to qualified Ghanaian medical doctors.
           </p>
         </div>
 
-        {/* Steps Grid */}
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {STEPS.map((step) => {
-            const Icon = step.icon
+        {/* Bento Grid */}
+        <div className="grid md:grid-cols-2 gap-6">
+          {FEATURES.map((item) => {
+            const Icon = item.icon
             return (
               <div
-                key={step.number}
-                className="bg-white rounded-3xl p-7 border border-slate-200/80 flex flex-col justify-between shadow-xs hover:border-slate-300 transition"
+                key={item.title}
+                className="bg-white rounded-3xl p-8 sm:p-10 border border-black/[0.05] shadow-xs flex flex-col justify-between hover:border-black/[0.1] transition group"
               >
                 <div>
-                  <div className="flex items-center justify-between mb-6">
-                    <span className="text-2xl font-black text-slate-300">
-                      {step.number}
-                    </span>
-                    <div className="w-10 h-10 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-center text-slate-800">
-                      <Icon size={18} />
+                  <div className="flex items-center justify-between mb-8">
+                    <div className="w-12 h-12 rounded-2xl bg-[#f5f5f7] flex items-center justify-center text-slate-900 group-hover:scale-105 transition">
+                      <Icon size={22} className="stroke-[1.8]" />
                     </div>
+                    <span className="text-[11px] font-medium text-slate-500 bg-[#f5f5f7] px-3 py-1 rounded-full border border-slate-200/60">
+                      {item.badge}
+                    </span>
                   </div>
 
-                  <h3 className="font-bold text-base text-slate-900 mb-2">
-                    {step.title}
+                  <h3 className="text-xl sm:text-2xl font-semibold text-slate-950 tracking-tight mb-3">
+                    {item.title}
                   </h3>
-
-                  <p className="text-xs text-slate-500 leading-relaxed font-sans">
-                    {step.desc}
+                  <p className="text-sm sm:text-base text-slate-500 leading-relaxed font-normal">
+                    {item.desc}
                   </p>
+                </div>
+
+                <div className="pt-8 mt-6 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-xs text-slate-400">Carevia Platform Standard</span>
+                  <Link
+                    href="/register"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-slate-900 hover:text-black group-hover:translate-x-0.5 transition"
+                  >
+                    <span>Get started</span>
+                    <ArrowRight size={13} />
+                  </Link>
                 </div>
               </div>
             )
           })}
         </div>
 
-        {/* Action Button */}
-        <div className="mt-14 text-center">
-          <Link
-            href="/register"
-            className="inline-flex items-center gap-2 bg-slate-900 hover:bg-black text-white font-semibold text-xs sm:text-sm px-7 py-3.5 rounded-full transition shadow-xs active:scale-95 cursor-pointer"
-          >
-            <span>Start Your Consultation</span>
-            <ArrowRight size={16} />
-          </Link>
-        </div>
       </div>
     </section>
   )

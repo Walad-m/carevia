@@ -1,114 +1,115 @@
 import Link from "next/link"
-import { Stethoscope, PhoneCall, Heart, ShieldCheck } from "lucide-react"
 
 export function HomeFooter() {
   return (
-    <footer className="bg-slate-950 text-slate-400 text-xs border-t border-slate-800">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
-          {/* Col 1: Brand & Bio */}
-          <div className="space-y-4 md:col-span-1">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-teal-600 flex items-center justify-center text-white">
-                <Stethoscope size={18} />
-              </div>
-              <span className="font-bold text-lg text-white tracking-tight">Carevia</span>
-            </div>
-            <p className="text-slate-400 text-xs leading-relaxed">
-              Connecting people to the right healthcare professionals across Ghana without guesswork, confusion, or delays.
-            </p>
-            <div className="text-[11px] text-slate-500">
-              Developed by <strong className="text-slate-400">Team Good Life</strong>
-              <div className="text-[10px] text-slate-600 mt-1">
-                Kenneth Brakoh · Ibrahim Anwaar Tiyumba · Elizabeth Annan · Salmata Wunnam Amadu · Fazail Osuman
-              </div>
-            </div>
-          </div>
+    <footer className="bg-[#f5f5f7] border-t border-slate-200/80 text-slate-500 text-xs font-sans">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
+        
+        {/* Footnote / Disclaimer */}
+        <div className="pb-8 mb-8 border-b border-slate-200/80 space-y-2 text-[11px] text-slate-400 leading-relaxed">
+          <p>
+            1. Carevia is an authorized telehealth software provider connecting patients to registered healthcare practitioners in Ghana. All attending physicians hold valid retention certificates issued by the Medical and Dental Council (MDC) of Ghana.
+          </p>
+          <p>
+            2. In the event of a life-threatening medical emergency (e.g. chest pain, difficulty breathing, acute trauma), dial the National Ambulance Service immediately at <strong>112</strong> or visit the nearest hospital emergency department.
+          </p>
+          <p>
+            3. Patient clinical data is processed in accordance with Ghana&apos;s Data Protection Act, 2012 (Act 843).
+          </p>
+        </div>
 
-          {/* Col 2: Services & Outbreaks */}
+        {/* Directory Columns */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12">
           <div>
-            <h4 className="font-bold text-sm text-white mb-3">Healthcare & Surveillance</h4>
+            <h4 className="font-semibold text-slate-950 text-xs mb-3">Platform</h4>
             <ul className="space-y-2">
               <li>
-                <a href="#outbreak-radar" className="hover:text-teal-400 transition">
-                  GHS Outbreak Radar
+                <a href="#overview" className="hover:text-slate-950 transition">
+                  Overview
                 </a>
               </li>
               <li>
-                <a href="#how-it-works" className="hover:text-teal-400 transition">
-                  AI-Guided Intake & Triage
+                <a href="#features" className="hover:text-slate-950 transition">
+                  How It Works
                 </a>
               </li>
               <li>
-                <a href="#health-articles" className="hover:text-teal-400 transition">
-                  Public Health Articles
+                <a href="#pricing" className="hover:text-slate-950 transition">
+                  Consultation Pricing
                 </a>
               </li>
               <li>
-                <a href="#pricing" className="hover:text-teal-400 transition">
-                  Telemedicine Fees (-20%)
-                </a>
+                <Link href="/register" className="hover:text-slate-950 transition">
+                  Book a Doctor
+                </Link>
               </li>
             </ul>
           </div>
 
-          {/* Col 3: Legal & Compliance */}
           <div>
-            <h4 className="font-bold text-sm text-white mb-3">Trust & Governance</h4>
+            <h4 className="font-semibold text-slate-950 text-xs mb-3">Physicians</h4>
             <ul className="space-y-2">
               <li>
-                <Link href="/privacy" className="hover:text-teal-400 transition">
+                <Link href="/login" className="hover:text-slate-950 transition">
+                  Doctor Portal
+                </Link>
+              </li>
+              <li>
+                <Link href="/register" className="hover:text-slate-950 transition">
+                  Join as Practitioner
+                </Link>
+              </li>
+              <li>
+                <span className="text-slate-400">MDC Ghana Verified</span>
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="font-semibold text-slate-950 text-xs mb-3">Compliance</h4>
+            <ul className="space-y-2">
+              <li>
+                <Link href="/privacy" className="hover:text-slate-950 transition">
                   Privacy Policy (Act 843)
                 </Link>
               </li>
               <li>
-                <Link href="/terms" className="hover:text-teal-400 transition">
-                  Terms of Clinical Service
+                <Link href="/terms" className="hover:text-slate-950 transition">
+                  Terms of Service
                 </Link>
               </li>
               <li>
-                <span className="text-slate-500">MDC Ghana Verified Registry</span>
-              </li>
-              <li>
-                <Link href="/login" className="hover:text-teal-400 transition">
-                  Doctor & Staff Portal
-                </Link>
+                <span className="text-slate-400">256-Bit Data Encryption</span>
               </li>
             </ul>
           </div>
 
-          {/* Col 4: Emergency Contacts in Ghana */}
-          <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-3">
-            <h4 className="font-bold text-sm text-rose-400 flex items-center gap-1.5">
-              <PhoneCall size={14} className="animate-pulse" />
-              Ghana Emergency Hotlines
-            </h4>
-            <div className="space-y-1.5 text-[11px]">
-              <p>
-                <strong className="text-white">National Ambulance:</strong>{" "}
-                <a href="tel:112" className="text-rose-400 font-bold hover:underline">112</a> / <a href="tel:193" className="text-rose-400 font-bold hover:underline">193</a>
-              </p>
-              <p>
-                <strong className="text-white">Ghana Police Service:</strong>{" "}
-                <a href="tel:191" className="text-slate-300 hover:underline">191</a>
-              </p>
-              <p>
-                <strong className="text-white">GHS Outbreak Desk:</strong>{" "}
-                <span className="text-slate-300">0302 682 709</span>
-              </p>
-            </div>
-            <p className="text-[10px] text-slate-500 leading-tight pt-1 border-t border-slate-800">
-              For acute breathlessness, heavy hemorrhaging, or loss of consciousness, seek immediate hospital attention.
-            </p>
+          <div>
+            <h4 className="font-semibold text-slate-950 text-xs mb-3">Emergency</h4>
+            <ul className="space-y-2">
+              <li>
+                <a href="tel:112" className="text-rose-600 font-medium hover:text-rose-700 transition">
+                  Ambulance Dispatch: 112
+                </a>
+              </li>
+              <li>
+                <span className="text-slate-400">Ghana Police: 191</span>
+              </li>
+              <li>
+                <span className="text-slate-400">Ghana Fire Service: 192</span>
+              </li>
+            </ul>
           </div>
         </div>
 
-        <div className="pt-8 border-t border-slate-800 text-center text-[11px] text-slate-600 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p>© {new Date().getFullYear()} Carevia Health Ghana. All rights reserved.</p>
-          <p className="flex items-center gap-1">
-            Carevia does not replace in-person emergency medicine · Regulated by MDC Ghana
+        {/* Bottom Bar */}
+        <div className="pt-8 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-slate-400">
+          <p>© {new Date().getFullYear()} Carevia Health Ltd. All rights reserved.</p>
+          <p>
+            Developed by <strong>Team Good Life</strong> · Accra, Ghana
           </p>
         </div>
+
       </div>
     </footer>
   )
