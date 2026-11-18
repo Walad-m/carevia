@@ -54,8 +54,8 @@ export default async function HomePage() {
         {/* 4. Care Pathway & Technology Bento */}
         <HowItWorksSection />
 
-        {/* 5. Evidence-Based Clinical Articles & Guides */}
-        <HealthArticlesSection articles={articles} />
+        {/* 5. Public Health Alert & Evidence-Based Clinical Guides */}
+        <HealthArticlesSection alerts={outbreakAlerts} articles={articles} />
 
         {/* 6. Clear, Transparent Pricing */}
         <PricingSection />
