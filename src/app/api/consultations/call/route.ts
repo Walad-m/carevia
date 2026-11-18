@@ -16,6 +16,8 @@ export interface CallState {
   answer?: any
   doctorCandidates: any[]
   patientCandidates: any[]
+  doctorPeerId?: string
+  patientPeerId?: string
 }
 
 // In-memory active calls registry for instant same-instance caching
@@ -131,7 +133,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json()
-    const { appointmentId, action, offer, answer, candidate, role } = body
+    const { appointmentId, action, offer, answer, candidate, role, doctorPeerId, patientPeerId } = body
 
     if (!appointmentId) {
       return NextResponse.json({ error: "Missing appointmentId" }, { status: 400 })
@@ -174,6 +176,8 @@ export async function POST(req: Request) {
         answer: existingCall?.answer || null,
         doctorCandidates: existingCall?.doctorCandidates || [],
         patientCandidates: existingCall?.patientCandidates || [],
+        doctorPeerId: doctorPeerId || existingCall?.doctorPeerId,
+        patientPeerId: patientPeerId || existingCall?.patientPeerId,
       }
 
       await saveCallState(appointmentId, newCall)
@@ -201,6 +205,12 @@ export async function POST(req: Request) {
         }
       }
 
+      if (doctorPeerId) {
+        existingCall.doctorPeerId = doctorPeerId
+      }
+      if (patientPeerId) {
+        existingCall.patientPeerId = patientPeerId
+      }
       if (offer) {
         existingCall.offer = offer
       }

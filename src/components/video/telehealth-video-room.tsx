@@ -20,6 +20,7 @@ import {
   X,
   Maximize2,
   Minimize2,
+  VolumeX,
 } from "lucide-react"
 
 export interface TelehealthAppointment {
@@ -58,29 +59,6 @@ interface TelehealthVideoRoomProps {
   onExit?: () => void
 }
 
-const ICE_SERVERS: RTCConfiguration = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-    { urls: "stun:stun2.l.google.com:19302" },
-    {
-      urls: "turn:openrelay.metered.ca:80",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443?transport=tcp",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-  ],
-}
-
 export function TelehealthVideoRoom({
   appointment,
   currentUserRole,
@@ -91,11 +69,10 @@ export function TelehealthVideoRoom({
   // Video element refs
   const localVideoRef = useRef<HTMLVideoElement | null>(null)
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null)
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
-  const channelRef = useRef<BroadcastChannel | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
-  const pendingCandidatesRef = useRef<any[]>([])
-  const processedCandidatesRef = useRef<Set<string>>(new Set())
+  const peerInstanceRef = useRef<any>(null)
+  const activeCallRef = useRef<any>(null)
+  const hasConnectedRef = useRef(false)
 
   // Media & connection state
   const [micOn, setMicOn] = useState(true)
@@ -103,6 +80,7 @@ export function TelehealthVideoRoom({
   const [isScreenSharing, setIsScreenSharing] = useState(false)
   const [callDuration, setCallDuration] = useState(0)
   const [peerConnected, setPeerConnected] = useState(false)
+  const [remoteAudioMuted, setRemoteAudioMuted] = useState(false)
   const [showDrawer, setShowDrawer] = useState(currentUserRole === "DOCTOR")
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [audioLevel, setAudioLevel] = useState(0)
@@ -113,7 +91,7 @@ export function TelehealthVideoRoom({
   // Clinical Workspace State (for doctor)
   const [activeTab, setActiveTab] = useState<"summary" | "notes" | "rx">("summary")
   const [clinicalNotes, setClinicalNotes] = useState(
-    "Patient presents with primary symptoms as reported. Vitals stable upon remote inspection. Advised adequate hydration, rest, and symptomatic therapy."
+    "Patient presents with primary symptoms as reported. Vitals stable upon inspection. Advised adequate hydration, rest, and symptomatic therapy."
   )
   const [prescription, setPrescription] = useState(
     "1. Tab Paracetamol 1g PO TDS x 3 days\n2. Oral Rehydration Salts (ORS) 1 sachet in 1L water PRN\n3. Follow up if symptoms worsen"
@@ -122,314 +100,254 @@ export function TelehealthVideoRoom({
   const [completed, setCompleted] = useState(false)
 
   const patientName = appointment.patient?.name || "Patient"
-  const doctorName = appointment.doctor?.name ? `Dr. ${appointment.doctor.name}` : "Attending Physician"
+  const rawDocName = appointment.doctor?.name || "Attending Physician"
+  const doctorName = rawDocName.startsWith("Dr.") ? rawDocName : `Dr. ${rawDocName}`
   const remotePeerName = currentUserRole === "DOCTOR" ? patientName : doctorName
   const remotePeerRole = currentUserRole === "DOCTOR" ? "Patient" : "Physician"
 
-  // 1. Initialize WebRTC and Signaling
+  // Attach remote stream safely to remote video element
+  const handleRemoteStream = useCallback((stream: MediaStream) => {
+    if (!remoteVideoRef.current) return
+    hasConnectedRef.current = true
+    remoteVideoRef.current.srcObject = stream
+
+    remoteVideoRef.current.play().catch(() => {
+      // Mobile Safari autoplay policy fallback: mute and play
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.muted = true
+        setRemoteAudioMuted(true)
+        remoteVideoRef.current.play().catch(() => {})
+      }
+    })
+
+    setPeerConnected(true)
+    setStatusMessage("Live video consultation active")
+  }, [])
+
+  // Initialize PeerJS and media
   useEffect(() => {
     let mounted = true
-    const roomId = `carevia-room-${appointment.id}`
+    const cleanId = appointment.id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 20)
+    const myRolePrefix = currentUserRole === "DOCTOR" ? "doc" : "pat"
+    const randomSuffix = Math.random().toString(36).substring(2, 7)
+    const myPeerId = `carevia-${cleanId}-${myRolePrefix}-${randomSuffix}`
 
-    // Setup local BroadcastChannel for same-browser instant sync
-    let channel: BroadcastChannel | null = null
-    try {
-      channel = new BroadcastChannel(roomId)
-      channelRef.current = channel
-    } catch (e) {
-      console.warn("BroadcastChannel not supported", e)
-    }
+    let peer: any = null
 
-    // Initialize WebRTC PeerConnection with STUN + TURN
-    const pc = new RTCPeerConnection(ICE_SERVERS)
-    peerConnectionRef.current = pc
-
-    // Handle incoming remote media track
-    pc.ontrack = (event) => {
-      if (remoteVideoRef.current && event.streams[0]) {
-        remoteVideoRef.current.srcObject = event.streams[0]
-        remoteVideoRef.current.play().catch(() => {
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.muted = true
-            remoteVideoRef.current.play().catch(() => {})
-          }
-        })
-        setPeerConnected(true)
-        setStatusMessage("Video consultation active")
+    // Load PeerJS library dynamically if not present
+    const loadPeerJS = (): Promise<any> => {
+      if ((window as any).Peer) {
+        return Promise.resolve((window as any).Peer)
       }
-    }
-
-    // Handle ICE candidates
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        if (channel) {
-          channel.postMessage({
-            type: "candidate",
-            candidate: event.candidate,
-            senderRole: currentUserRole,
-          })
+      return new Promise((resolve, reject) => {
+        const scriptId = "peerjs-cdn-script"
+        let script = document.getElementById(scriptId) as HTMLScriptElement | null
+        if (!script) {
+          script = document.createElement("script")
+          script.id = scriptId
+          script.src = "https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"
+          script.async = true
+          script.onload = () => resolve((window as any).Peer)
+          script.onerror = () => reject(new Error("Failed to load PeerJS"))
+          document.body.appendChild(script)
+        } else {
+          script.addEventListener("load", () => resolve((window as any).Peer))
         }
-        fetch("/api/consultations/call", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            appointmentId: appointment.id,
-            action: "SIGNAL",
-            candidate: event.candidate,
-            role: currentUserRole,
-          }),
-        }).catch(() => {})
-      }
+      })
     }
 
-    // Process ICE candidates safely
-    const processCandidate = async (cand: any) => {
-      const candKey = JSON.stringify(cand)
-      if (processedCandidatesRef.current.has(candKey)) return
-      processedCandidatesRef.current.add(candKey)
-
-      if (pc.remoteDescription && pc.remoteDescription.type) {
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(cand))
-        } catch (err) {
-          console.warn("Error adding ICE candidate:", err)
-        }
-      } else {
-        pendingCandidatesRef.current.push(cand)
-      }
-    }
-
-    // Flush queued candidates once remote description is set
-    const flushPendingCandidates = async () => {
-      while (pendingCandidatesRef.current.length > 0) {
-        const cand = pendingCandidatesRef.current.shift()
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(cand))
-        } catch {}
-      }
-    }
-
-    // Cross-device cloud signaling polling loop (every 1.5s)
-    const signalingPoll = setInterval(async () => {
-      if (!mounted) return
+    // Start local webcam and mic
+    async function initMediaAndPeer() {
       try {
-        const res = await fetch(`/api/consultations/call?appointmentId=${appointment.id}`)
-        if (!res.ok) return
-        const data = await res.json()
-        const call = data.call
-        if (!call) return
+        const PeerClass = await loadPeerJS()
+        if (!mounted) return
 
-        // Case A: Patient receives Doctor's Offer
-        if (currentUserRole === "PATIENT" && call.offer && !pc.currentRemoteDescription) {
-          setStatusMessage("Connecting to physician video...")
-          await pc.setRemoteDescription(new RTCSessionDescription(call.offer))
-          await flushPendingCandidates()
-
-          const answer = await pc.createAnswer()
-          await pc.setLocalDescription(answer)
-
-          fetch("/api/consultations/call", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              appointmentId: appointment.id,
-              action: "SIGNAL",
-              answer,
-              role: "PATIENT",
-            }),
-          }).catch(() => {})
-
-          channel?.postMessage({
-            type: "answer",
-            answer,
-            senderRole: "PATIENT",
-          })
-        }
-
-        // Case B: Doctor receives Patient's Answer
-        else if (
-          currentUserRole === "DOCTOR" &&
-          call.answer &&
-          !pc.currentRemoteDescription &&
-          pc.signalingState === "have-local-offer"
-        ) {
-          setStatusMessage("Patient joined · Connecting video...")
-          await pc.setRemoteDescription(new RTCSessionDescription(call.answer))
-          await flushPendingCandidates()
-        }
-
-        // Process remote peer candidates
-        const remoteCandidates =
-          currentUserRole === "DOCTOR" ? call.patientCandidates : call.doctorCandidates
-        if (remoteCandidates && Array.isArray(remoteCandidates)) {
-          for (const cand of remoteCandidates) {
-            await processCandidate(cand)
-          }
-        }
-      } catch (err) {
-        console.warn("Signaling poll tick error:", err)
-      }
-    }, 1500)
-
-    // Listen to local BroadcastChannel messages (instant cross-tab sync)
-    if (channel) {
-      channel.onmessage = async (msg) => {
-        if (!mounted || msg.data.senderRole === currentUserRole) return
-
+        // 1. Get webcam & mic stream
+        let stream: MediaStream | null = null
         try {
-          if (msg.data.type === "offer" && !pc.currentRemoteDescription) {
-            await pc.setRemoteDescription(new RTCSessionDescription(msg.data.offer))
-            await flushPendingCandidates()
-            const answer = await pc.createAnswer()
-            await pc.setLocalDescription(answer)
-            channel?.postMessage({
-              type: "answer",
-              answer,
-              senderRole: currentUserRole,
-            })
-          } else if (msg.data.type === "answer" && !pc.currentRemoteDescription) {
-            await pc.setRemoteDescription(new RTCSessionDescription(msg.data.answer))
-            await flushPendingCandidates()
-          } else if (msg.data.type === "candidate") {
-            await processCandidate(msg.data.candidate)
-          }
-        } catch (err) {
-          console.warn("WebRTC channel message error", err)
-        }
-      }
-    }
-
-    // Start local camera and mic
-    async function startLocalMedia() {
-      try {
-        if (navigator.mediaDevices?.getUserMedia) {
-          const stream = await navigator.mediaDevices.getUserMedia({
+          stream = await navigator.mediaDevices.getUserMedia({
             video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
             audio: true,
           })
+        } catch (mediaErr) {
+          console.warn("Failed with ideal constraints, retrying basic:", mediaErr)
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        }
 
-          if (!mounted) {
-            stream.getTracks().forEach((t) => t.stop())
-            return
-          }
+        if (!mounted || !stream) return
+        localStreamRef.current = stream
 
-          localStreamRef.current = stream
-          if (localVideoRef.current) {
-            localVideoRef.current.srcObject = stream
-          }
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream
+        }
 
-          // Add audio and video tracks to PeerConnection
-          stream.getTracks().forEach((track) => {
-            pc.addTrack(track, stream)
-          })
+        // Setup simple audio level meter
+        try {
+          const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
+          const analyser = audioCtx.createAnalyser()
+          const source = audioCtx.createMediaStreamSource(stream)
+          source.connect(analyser)
+          analyser.fftSize = 64
+          const dataArray = new Uint8Array(analyser.frequencyBinCount)
 
-          // Setup audio level meter
-          try {
-            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
-            const analyser = audioCtx.createAnalyser()
-            const source = audioCtx.createMediaStreamSource(stream)
-            source.connect(analyser)
-            analyser.fftSize = 64
-            const dataArray = new Uint8Array(analyser.frequencyBinCount)
-
-            const updateAudio = () => {
-              if (!mounted) {
-                audioCtx.close().catch(() => {})
-                return
-              }
-              analyser.getByteFrequencyData(dataArray)
-              let sum = 0
-              for (let i = 0; i < dataArray.length; i++) {
-                sum += dataArray[i]
-              }
-              setAudioLevel(Math.min(100, Math.floor(sum / dataArray.length)))
-              requestAnimationFrame(updateAudio)
+          const updateAudio = () => {
+            if (!mounted) {
+              audioCtx.close().catch(() => {})
+              return
             }
-            updateAudio()
-          } catch {}
+            analyser.getByteFrequencyData(dataArray)
+            let sum = 0
+            for (let i = 0; i < dataArray.length; i++) {
+              sum += dataArray[i]
+            }
+            setAudioLevel(Math.min(100, Math.floor(sum / dataArray.length)))
+            requestAnimationFrame(updateAudio)
+          }
+          updateAudio()
+        } catch {}
 
-          // If DOCTOR: Trigger patient call notification and create WebRTC Offer
+        // 2. Initialize PeerJS client instance
+        peer = new PeerClass(myPeerId, {
+          config: {
+            iceServers: [
+              { urls: "stun:stun.l.google.com:19302" },
+              { urls: "stun:stun1.l.google.com:19302" },
+              { urls: "stun:stun2.l.google.com:19302" },
+            ],
+          },
+        })
+        peerInstanceRef.current = peer
+
+        // When Peer is ready
+        peer.on("open", (id: string) => {
+          if (!mounted) return
+          // Register peer ID on backend
           if (currentUserRole === "DOCTOR") {
-            // 1. Alert backend and ring patient's dashboard
             fetch("/api/consultations/call", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 appointmentId: appointment.id,
                 action: "START",
+                doctorPeerId: id,
+                role: "DOCTOR",
               }),
             }).catch(() => {})
 
-            // 2. Broadcast call alert for local tab ringtone
+            // Alert patient via BroadcastChannel
             try {
               const alertChannel = new BroadcastChannel("carevia-call-alerts")
               alertChannel.postMessage({
                 type: "CALL_START",
                 appointmentId: appointment.id,
                 doctorId: appointment.doctorId || appointment.doctor?.id,
-                doctorName: appointment.doctor?.name || "Attending Physician",
+                doctorName: doctorName,
                 specialty: appointment.doctor?.doctorProfile?.specialty || "General Practice",
                 patientId: appointment.patientId || appointment.patient?.id,
               })
               setTimeout(() => alertChannel.close(), 1000)
             } catch {}
-
-            // 3. Create initial WebRTC Offer
-            try {
-              const offer = await pc.createOffer({
-                offerToReceiveAudio: true,
-                offerToReceiveVideo: true,
-              })
-              await pc.setLocalDescription(offer)
-
-              // Save offer to backend
-              fetch("/api/consultations/call", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  appointmentId: appointment.id,
-                  action: "START",
-                  offer,
-                  role: "DOCTOR",
-                }),
-              }).catch(() => {})
-
-              // Broadcast offer to local tabs
-              channel?.postMessage({
-                type: "offer",
-                offer,
-                senderRole: "DOCTOR",
-              })
-            } catch (offerErr) {
-              console.warn("Failed to create offer:", offerErr)
-            }
+          } else {
+            fetch("/api/consultations/call", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                appointmentId: appointment.id,
+                action: "SIGNAL",
+                patientPeerId: id,
+                role: "PATIENT",
+              }),
+            }).catch(() => {})
           }
-        }
+        })
+
+        // Listen for incoming call from peer
+        peer.on("call", (incomingCall: any) => {
+          if (!mounted) return
+          activeCallRef.current = incomingCall
+          incomingCall.answer(stream)
+
+          incomingCall.on("stream", (remoteStream: MediaStream) => {
+            if (!mounted) return
+            handleRemoteStream(remoteStream)
+          })
+
+          incomingCall.on("close", () => {
+            setPeerConnected(false)
+          })
+        })
+
+        peer.on("error", (err: any) => {
+          console.warn("PeerJS error:", err)
+        })
       } catch (err) {
-        console.warn("Local media stream error:", err)
+        console.error("Initialization error:", err)
       }
     }
 
-    startLocalMedia()
+    initMediaAndPeer()
+
+    // Polling loop to discover remote peer and call them
+    const pollInterval = setInterval(async () => {
+      if (!mounted || hasConnectedRef.current) return
+      try {
+        const res = await fetch(`/api/consultations/call?appointmentId=${appointment.id}`)
+        if (!res.ok) return
+        const data = await res.json()
+        const callState = data.call
+        if (!callState) return
+
+        const targetPeerId =
+          currentUserRole === "PATIENT" ? callState.doctorPeerId : callState.patientPeerId
+
+        if (targetPeerId && peer && !peer.destroyed && localStreamRef.current) {
+          if (!activeCallRef.current || !hasConnectedRef.current) {
+            setStatusMessage(`Connecting to ${remotePeerName}...`)
+            const outgoingCall = peer.call(targetPeerId, localStreamRef.current)
+            if (outgoingCall) {
+              activeCallRef.current = outgoingCall
+              outgoingCall.on("stream", (remoteStream: MediaStream) => {
+                if (!mounted) return
+                handleRemoteStream(remoteStream)
+              })
+              outgoingCall.on("close", () => {
+                setPeerConnected(false)
+              })
+            }
+          }
+        }
+      } catch (pollErr) {
+        console.warn("Peer discovery poll error:", pollErr)
+      }
+    }, 1500)
 
     // Call duration timer
-    const interval = setInterval(() => {
+    const durationInterval = setInterval(() => {
       setCallDuration((c) => c + 1)
     }, 1000)
 
     return () => {
       mounted = false
-      clearInterval(interval)
-      clearInterval(signalingPoll)
+      clearInterval(pollInterval)
+      clearInterval(durationInterval)
+
+      if (activeCallRef.current) {
+        try {
+          activeCallRef.current.close()
+        } catch {}
+      }
+
+      if (peer) {
+        try {
+          peer.destroy()
+        } catch {}
+      }
+
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((t) => t.stop())
       }
-      pc.close()
-      if (channel) {
-        channel.close()
-      }
     }
-  }, [appointment.id, currentUserRole])
+  }, [appointment.id, currentUserRole, doctorName, handleRemoteStream, remotePeerName])
 
   // Toggle Camera
   const toggleCamera = useCallback(() => {
@@ -458,9 +376,9 @@ export function TelehealthVideoRoom({
         const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true })
         const screenTrack = screenStream.getVideoTracks()[0]
 
-        if (peerConnectionRef.current) {
-          const senders = peerConnectionRef.current.getSenders()
-          const videoSender = senders.find((s) => s.track?.kind === "video")
+        if (activeCallRef.current && activeCallRef.current.peerConnection) {
+          const senders = activeCallRef.current.peerConnection.getSenders()
+          const videoSender = senders.find((s: any) => s.track?.kind === "video")
           if (videoSender) {
             videoSender.replaceTrack(screenTrack)
           }
@@ -475,9 +393,9 @@ export function TelehealthVideoRoom({
           setIsScreenSharing(false)
           if (localStreamRef.current) {
             const originalTrack = localStreamRef.current.getVideoTracks()[0]
-            if (peerConnectionRef.current) {
-              const senders = peerConnectionRef.current.getSenders()
-              const videoSender = senders.find((s) => s.track?.kind === "video")
+            if (activeCallRef.current && activeCallRef.current.peerConnection) {
+              const senders = activeCallRef.current.peerConnection.getSenders()
+              const videoSender = senders.find((s: any) => s.track?.kind === "video")
               if (videoSender && originalTrack) {
                 videoSender.replaceTrack(originalTrack)
               }
@@ -494,9 +412,9 @@ export function TelehealthVideoRoom({
       setIsScreenSharing(false)
       if (localStreamRef.current) {
         const originalTrack = localStreamRef.current.getVideoTracks()[0]
-        if (peerConnectionRef.current) {
-          const senders = peerConnectionRef.current.getSenders()
-          const videoSender = senders.find((s) => s.track?.kind === "video")
+        if (activeCallRef.current && activeCallRef.current.peerConnection) {
+          const senders = activeCallRef.current.peerConnection.getSenders()
+          const videoSender = senders.find((s: any) => s.track?.kind === "video")
           if (videoSender && originalTrack) {
             videoSender.replaceTrack(originalTrack)
           }
@@ -525,9 +443,22 @@ export function TelehealthVideoRoom({
       setTimeout(() => alertChannel.close(), 500)
     } catch {}
 
+    if (activeCallRef.current) {
+      try {
+        activeCallRef.current.close()
+      } catch {}
+    }
+
+    if (peerInstanceRef.current) {
+      try {
+        peerInstanceRef.current.destroy()
+      } catch {}
+    }
+
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((t) => t.stop())
     }
+
     if (onExit) {
       onExit()
     } else {
@@ -660,6 +591,22 @@ export function TelehealthVideoRoom({
               <span className="text-white/60">({remotePeerRole})</span>
               <span className="text-emerald-400 text-[10px] font-mono">· Live Video Active</span>
             </div>
+          )}
+
+          {/* Remote Audio Muted Banner (Tap to Unmute on iOS) */}
+          {remoteAudioMuted && peerConnected && (
+            <button
+              onClick={() => {
+                if (remoteVideoRef.current) {
+                  remoteVideoRef.current.muted = false
+                  setRemoteAudioMuted(false)
+                }
+              }}
+              className="absolute top-20 right-6 z-20 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/90 text-slate-950 font-bold text-xs shadow-lg animate-bounce cursor-pointer"
+            >
+              <VolumeX size={14} />
+              <span>Tap to Unmute Audio</span>
+            </button>
           )}
 
           {/* When Peer is Not Connected (Waiting / Call Connecting Screen) */}
