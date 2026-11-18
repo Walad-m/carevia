@@ -104,7 +104,7 @@ export default async function DoctorDashboardPage() {
 
   // ── Approved doctor dashboard ─────────────────────────────────────────
   return (
-    <div className="p-8 max-w-4xl space-y-8">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-5xl w-full space-y-8">
       {/* Header */}
       <div>
         <div className="flex items-center gap-2 mb-2">

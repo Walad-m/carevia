@@ -40,7 +40,7 @@ export default async function DoctorSchedulePage() {
   ])
 
   return (
-    <div className="p-8 max-w-4xl space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-5xl w-full space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">My Consultation Schedule</h1>
         <p className="text-slate-500 mt-1 text-sm">

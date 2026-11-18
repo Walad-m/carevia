@@ -31,7 +31,7 @@ export default async function PatientDashboardPage() {
   const firstName = session!.user.name?.split(" ")[0] ?? "there"
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-5xl w-full">
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-slate-900">

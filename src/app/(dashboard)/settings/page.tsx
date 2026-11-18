@@ -26,7 +26,7 @@ export default async function SettingsPage() {
   if (!user) redirect("/login")
 
   return (
-    <div className="p-8 max-w-3xl">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl w-full">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-slate-900">Account Settings</h1>
         <p className="text-slate-500 mt-1 text-sm">

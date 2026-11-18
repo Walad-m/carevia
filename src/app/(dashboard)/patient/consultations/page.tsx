@@ -57,7 +57,7 @@ export default async function PatientConsultationsPage() {
   }
 
   return (
-    <div className="p-8 max-w-3xl">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl w-full">
       {/* Header */}
       <div className="mb-6">
         <Link
