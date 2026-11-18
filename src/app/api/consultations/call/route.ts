@@ -2,24 +2,72 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 
-// In-memory active calls registry for fast real-time WebRTC signalling
-const activeCalls = new Map<
-  string,
-  {
-    appointmentId: string
-    doctorId: string
-    doctorName: string
-    specialty: string
-    patientId: string
-    patientName: string
-    status: "CALLING" | "ACCEPTED" | "ENDED"
-    startedAt: number
-    offer?: any
-    answer?: any
-    doctorCandidates: any[]
-    patientCandidates: any[]
+export interface CallState {
+  __carevia_call__: true
+  appointmentId: string
+  doctorId: string
+  doctorName: string
+  specialty: string
+  patientId: string
+  patientName: string
+  status: "CALLING" | "ACCEPTED" | "ENDED"
+  startedAt: number
+  offer?: any
+  answer?: any
+  doctorCandidates: any[]
+  patientCandidates: any[]
+}
+
+// In-memory active calls registry for instant same-instance caching
+const activeCalls = new Map<string, CallState>()
+
+async function getCallState(appointmentId: string): Promise<CallState | null> {
+  const inMemory = activeCalls.get(appointmentId)
+  if (inMemory && Date.now() - inMemory.startedAt < 3600000) {
+    return inMemory
   }
->()
+
+  try {
+    const appt = await db.appointment.findUnique({
+      where: { id: appointmentId },
+      select: { declineReason: true },
+    })
+
+    if (appt?.declineReason && appt.declineReason.startsWith('{"__carevia_call__":true')) {
+      const parsed: CallState = JSON.parse(appt.declineReason)
+      activeCalls.set(appointmentId, parsed)
+      return parsed
+    }
+  } catch (err) {
+    console.error("[GET_CALL_STATE_ERROR]", err)
+  }
+
+  return null
+}
+
+async function saveCallState(appointmentId: string, state: CallState | null) {
+  if (state) {
+    activeCalls.set(appointmentId, state)
+    try {
+      await db.appointment.update({
+        where: { id: appointmentId },
+        data: { declineReason: JSON.stringify(state) },
+      })
+    } catch (err) {
+      console.error("[SAVE_CALL_STATE_ERROR]", err)
+    }
+  } else {
+    activeCalls.delete(appointmentId)
+    try {
+      await db.appointment.update({
+        where: { id: appointmentId },
+        data: { declineReason: null },
+      })
+    } catch (err) {
+      console.error("[CLEAR_CALL_STATE_ERROR]", err)
+    }
+  }
+}
 
 export async function GET(req: Request) {
   try {
@@ -33,25 +81,42 @@ export async function GET(req: Request) {
 
     // If specific appointment requested
     if (appointmentId) {
-      const call = activeCalls.get(appointmentId)
+      const call = await getCallState(appointmentId)
       return NextResponse.json({ call: call || null })
     }
 
     // Otherwise find any active call where current user is the patient
-    let incomingCall = null
     const now = Date.now()
     for (const [_, call] of activeCalls) {
-      // Calls expire after 3 minutes if unaccepted
-      if (now - call.startedAt > 180000) {
-        continue
-      }
-      if (call.patientId === session.user.id && call.status === "CALLING") {
-        incomingCall = call
-        break
+      if (now - call.startedAt < 180000 && call.patientId === session.user.id && call.status === "CALLING") {
+        return NextResponse.json({ incomingCall: call })
       }
     }
 
-    return NextResponse.json({ incomingCall })
+    // Check database if not in local lambda memory
+    try {
+      const appts = await db.appointment.findMany({
+        where: {
+          patientId: session.user.id,
+          declineReason: { startsWith: '{"__carevia_call__":true' },
+        },
+        select: { declineReason: true },
+        take: 3,
+      })
+
+      for (const appt of appts) {
+        if (!appt.declineReason) continue
+        const parsed: CallState = JSON.parse(appt.declineReason)
+        if (parsed.status === "CALLING" && now - parsed.startedAt < 180000) {
+          activeCalls.set(parsed.appointmentId, parsed)
+          return NextResponse.json({ incomingCall: parsed })
+        }
+      }
+    } catch (err) {
+      console.error("[INCOMING_CALL_DB_ERROR]", err)
+    }
+
+    return NextResponse.json({ incomingCall: null })
   } catch (error) {
     console.error("[ACTIVE_CALL_GET]", error)
     return NextResponse.json({ incomingCall: null })
@@ -72,7 +137,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing appointmentId" }, { status: 400 })
     }
 
-    let existingCall = activeCalls.get(appointmentId)
+    let existingCall = await getCallState(appointmentId)
 
     if (action === "START") {
       const appointment = await db.appointment.findUnique({
@@ -95,20 +160,23 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Appointment not found" }, { status: 404 })
       }
 
-      const newCall = {
+      const newCall: CallState = {
+        __carevia_call__: true,
         appointmentId,
         doctorId: appointment.doctorId,
         doctorName: appointment.doctor.name || "Attending Physician",
         specialty: appointment.doctor.doctorProfile?.specialty || "General Practice",
         patientId: appointment.patientId,
         patientName: appointment.patient.name || "Patient",
-        status: "CALLING" as const,
+        status: "CALLING",
         startedAt: Date.now(),
-        offer: offer || null,
-        doctorCandidates: [],
-        patientCandidates: [],
+        offer: offer || existingCall?.offer || null,
+        answer: existingCall?.answer || null,
+        doctorCandidates: existingCall?.doctorCandidates || [],
+        patientCandidates: existingCall?.patientCandidates || [],
       }
-      activeCalls.set(appointmentId, newCall)
+
+      await saveCallState(appointmentId, newCall)
 
       return NextResponse.json({
         success: true,
@@ -119,6 +187,7 @@ export async function POST(req: Request) {
     if (action === "SIGNAL") {
       if (!existingCall) {
         existingCall = {
+          __carevia_call__: true,
           appointmentId,
           doctorId: session.user.id,
           doctorName: session.user.name || "Doctor",
@@ -130,7 +199,6 @@ export async function POST(req: Request) {
           doctorCandidates: [],
           patientCandidates: [],
         }
-        activeCalls.set(appointmentId, existingCall)
       }
 
       if (offer) {
@@ -142,11 +210,15 @@ export async function POST(req: Request) {
       }
       if (candidate) {
         if (role === "DOCTOR") {
+          if (!existingCall.doctorCandidates) existingCall.doctorCandidates = []
           existingCall.doctorCandidates.push(candidate)
         } else {
+          if (!existingCall.patientCandidates) existingCall.patientCandidates = []
           existingCall.patientCandidates.push(candidate)
         }
       }
+
+      await saveCallState(appointmentId, existingCall)
 
       return NextResponse.json({ success: true, call: existingCall })
     }
@@ -154,12 +226,13 @@ export async function POST(req: Request) {
     if (action === "ACCEPT") {
       if (existingCall) {
         existingCall.status = "ACCEPTED"
+        await saveCallState(appointmentId, existingCall)
       }
       return NextResponse.json({ success: true, call: existingCall })
     }
 
     if (action === "END") {
-      activeCalls.delete(appointmentId)
+      await saveCallState(appointmentId, null)
       return NextResponse.json({ success: true })
     }
 

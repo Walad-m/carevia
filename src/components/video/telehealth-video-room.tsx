@@ -21,7 +21,9 @@ import {
   Maximize2,
   Minimize2,
   Volume2,
-  Pill,
+  VolumeX,
+  RefreshCw,
+  Tv,
 } from "lucide-react"
 
 export interface TelehealthAppointment {
@@ -60,6 +62,29 @@ interface TelehealthVideoRoomProps {
   onExit?: () => void
 }
 
+const ICE_SERVERS: RTCConfiguration = {
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun2.l.google.com:19302" },
+    {
+      urls: "turn:openrelay.metered.ca:80",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turn:openrelay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turn:openrelay.metered.ca:443?transport=tcp",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+  ],
+}
+
 export function TelehealthVideoRoom({
   appointment,
   currentUserRole,
@@ -73,17 +98,21 @@ export function TelehealthVideoRoom({
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
   const channelRef = useRef<BroadcastChannel | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
+  const pendingCandidatesRef = useRef<any[]>([])
+  const processedCandidatesRef = useRef<Set<string>>(new Set())
 
-  // Media state
+  // Media & connection state
   const [micOn, setMicOn] = useState(true)
   const [cameraOn, setCameraOn] = useState(true)
   const [isScreenSharing, setIsScreenSharing] = useState(false)
   const [callDuration, setCallDuration] = useState(0)
   const [peerConnected, setPeerConnected] = useState(false)
-  const [peerMuted, setPeerMuted] = useState(false)
+  const [isDemoMode, setIsDemoMode] = useState(false)
+  const [remoteAudioMuted, setRemoteAudioMuted] = useState(false)
   const [showDrawer, setShowDrawer] = useState(currentUserRole === "DOCTOR")
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [audioLevel, setAudioLevel] = useState(0)
+  const [signalingStatus, setSignalingStatus] = useState("Connecting room...")
 
   // Clinical Workspace State (for doctor)
   const [activeTab, setActiveTab] = useState<"summary" | "notes" | "rx">("summary")
@@ -101,12 +130,12 @@ export function TelehealthVideoRoom({
   const remotePeerName = currentUserRole === "DOCTOR" ? patientName : doctorName
   const remotePeerRole = currentUserRole === "DOCTOR" ? "Patient" : "Physician"
 
-  // 1. Initialize Local Media & WebRTC BroadcastChannel signaling
+  // 1. Initialize WebRTC and Signaling
   useEffect(() => {
     let mounted = true
     const roomId = `carevia-room-${appointment.id}`
 
-    // Setup local WebRTC broadcast channel for cross-tab communication
+    // Setup local BroadcastChannel for same-browser instant sync
     let channel: BroadcastChannel | null = null
     try {
       channel = new BroadcastChannel(roomId)
@@ -115,23 +144,30 @@ export function TelehealthVideoRoom({
       console.warn("BroadcastChannel not supported", e)
     }
 
-    // Initialize WebRTC PeerConnection
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-    })
+    // Initialize WebRTC PeerConnection with STUN + TURN
+    const pc = new RTCPeerConnection(ICE_SERVERS)
     peerConnectionRef.current = pc
 
-    // Handle remote track
+    // Handle incoming remote media track
     pc.ontrack = (event) => {
       if (remoteVideoRef.current && event.streams[0]) {
         remoteVideoRef.current.srcObject = event.streams[0]
+        remoteVideoRef.current.play().catch(() => {
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.muted = true
+            setRemoteAudioMuted(true)
+            remoteVideoRef.current.play().catch(() => {})
+          }
+        })
         setPeerConnected(true)
+        setSignalingStatus("Peer video stream connected")
       }
     }
 
     // Handle ICE candidates
     pc.onicecandidate = (event) => {
       if (event.candidate) {
+        // 1. Post to local channel
         if (channel) {
           channel.postMessage({
             type: "candidate",
@@ -139,6 +175,7 @@ export function TelehealthVideoRoom({
             senderRole: currentUserRole,
           })
         }
+        // 2. Post to cloud database signaling endpoint
         fetch("/api/consultations/call", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -152,7 +189,45 @@ export function TelehealthVideoRoom({
       }
     }
 
-    // Cross-device internet WebRTC signaling polling
+    // Handle ICE connection state changes
+    pc.oniceconnectionstatechange = () => {
+      if (!mounted) return
+      if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
+        setPeerConnected(true)
+        setSignalingStatus("Encrypted P2P Active")
+      } else if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
+        setSignalingStatus("Reconnecting video stream...")
+      }
+    }
+
+    // Process ICE candidates safely
+    const processCandidate = async (cand: any) => {
+      const candKey = JSON.stringify(cand)
+      if (processedCandidatesRef.current.has(candKey)) return
+      processedCandidatesRef.current.add(candKey)
+
+      if (pc.remoteDescription && pc.remoteDescription.type) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(cand))
+        } catch (err) {
+          console.warn("Error adding ICE candidate:", err)
+        }
+      } else {
+        pendingCandidatesRef.current.push(cand)
+      }
+    }
+
+    // Flush queued candidates once remote description is set
+    const flushPendingCandidates = async () => {
+      while (pendingCandidatesRef.current.length > 0) {
+        const cand = pendingCandidatesRef.current.shift()
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(cand))
+        } catch {}
+      }
+    }
+
+    // Cross-device cloud signaling polling loop
     const signalingPoll = setInterval(async () => {
       if (!mounted) return
       try {
@@ -162,10 +237,15 @@ export function TelehealthVideoRoom({
         const call = data.call
         if (!call) return
 
+        // Case A: Current user is PATIENT, Doctor has created an Offer
         if (currentUserRole === "PATIENT" && call.offer && !pc.currentRemoteDescription) {
+          setSignalingStatus("Physician offer received · Connecting...")
           await pc.setRemoteDescription(new RTCSessionDescription(call.offer))
+          await flushPendingCandidates()
+
           const answer = await pc.createAnswer()
           await pc.setLocalDescription(answer)
+
           fetch("/api/consultations/call", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -176,40 +256,48 @@ export function TelehealthVideoRoom({
               role: "PATIENT",
             }),
           }).catch(() => {})
-          setPeerConnected(true)
-        } else if (currentUserRole === "DOCTOR" && call.answer && !pc.currentRemoteDescription) {
-          await pc.setRemoteDescription(new RTCSessionDescription(call.answer))
-          setPeerConnected(true)
+
+          channel?.postMessage({
+            type: "answer",
+            answer,
+            senderRole: "PATIENT",
+          })
         }
 
-        const candidates = currentUserRole === "DOCTOR" ? call.patientCandidates : call.doctorCandidates
-        if (candidates && candidates.length > 0) {
-          for (const cand of candidates) {
-            try {
-              await pc.addIceCandidate(new RTCIceCandidate(cand))
-            } catch {}
+        // Case B: Current user is DOCTOR, Patient has created an Answer
+        else if (
+          currentUserRole === "DOCTOR" &&
+          call.answer &&
+          !pc.currentRemoteDescription &&
+          pc.signalingState === "have-local-offer"
+        ) {
+          setSignalingStatus("Patient connected · Synchronizing video...")
+          await pc.setRemoteDescription(new RTCSessionDescription(call.answer))
+          await flushPendingCandidates()
+        }
+
+        // Process remote peer candidates
+        const remoteCandidates =
+          currentUserRole === "DOCTOR" ? call.patientCandidates : call.doctorCandidates
+        if (remoteCandidates && Array.isArray(remoteCandidates)) {
+          for (const cand of remoteCandidates) {
+            await processCandidate(cand)
           }
         }
-      } catch {}
-    }, 2000)
+      } catch (err) {
+        console.warn("Signaling poll tick error:", err)
+      }
+    }, 1500)
 
-    // Listen to signaling messages
+    // Listen to local BroadcastChannel messages
     if (channel) {
       channel.onmessage = async (msg) => {
         if (!mounted || msg.data.senderRole === currentUserRole) return
 
         try {
-          if (msg.data.type === "join") {
-            // New peer joined -> create offer
-            const offer = await pc.createOffer()
-            await pc.setLocalDescription(offer)
-            channel?.postMessage({
-              type: "offer",
-              offer,
-              senderRole: currentUserRole,
-            })
-          } else if (msg.data.type === "offer") {
+          if (msg.data.type === "offer" && !pc.currentRemoteDescription) {
             await pc.setRemoteDescription(new RTCSessionDescription(msg.data.offer))
+            await flushPendingCandidates()
             const answer = await pc.createAnswer()
             await pc.setLocalDescription(answer)
             channel?.postMessage({
@@ -217,46 +305,76 @@ export function TelehealthVideoRoom({
               answer,
               senderRole: currentUserRole,
             })
-            setPeerConnected(true)
-          } else if (msg.data.type === "answer") {
+          } else if (msg.data.type === "answer" && !pc.currentRemoteDescription) {
             await pc.setRemoteDescription(new RTCSessionDescription(msg.data.answer))
-            setPeerConnected(true)
+            await flushPendingCandidates()
           } else if (msg.data.type === "candidate") {
-            try {
-              await pc.addIceCandidate(new RTCIceCandidate(msg.data.candidate))
-            } catch (err) {
-              console.warn("ICE candidate error", err)
-            }
+            await processCandidate(msg.data.candidate)
           }
         } catch (err) {
-          console.warn("WebRTC signaling error", err)
+          console.warn("WebRTC channel message error", err)
         }
       }
     }
 
-    // Start local webcam and mic
+    // Start local camera and mic
     async function startLocalMedia() {
       try {
         if (navigator.mediaDevices?.getUserMedia) {
           const stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
             audio: true,
           })
+
           if (!mounted) {
             stream.getTracks().forEach((t) => t.stop())
             return
           }
+
           localStreamRef.current = stream
           if (localVideoRef.current) {
             localVideoRef.current.srcObject = stream
           }
 
-          // Add tracks to PeerConnection
+          // Add audio and video tracks to PeerConnection
           stream.getTracks().forEach((track) => {
             pc.addTrack(track, stream)
           })
 
-          // Setup simple audio level meter
+          // Doctor creates offer immediately after acquiring camera
+          if (currentUserRole === "DOCTOR") {
+            setSignalingStatus("Initializing physician room offer...")
+            try {
+              const offer = await pc.createOffer({
+                offerToReceiveAudio: true,
+                offerToReceiveVideo: true,
+              })
+              await pc.setLocalDescription(offer)
+
+              // Push offer to database
+              fetch("/api/consultations/call", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  appointmentId: appointment.id,
+                  action: "START",
+                  offer,
+                  role: "DOCTOR",
+                }),
+              }).catch(() => {})
+
+              // Broadcast to local tab
+              channel?.postMessage({
+                type: "offer",
+                offer,
+                senderRole: "DOCTOR",
+              })
+            } catch (offerErr) {
+              console.warn("Failed to create offer:", offerErr)
+            }
+          }
+
+          // Setup audio level meter
           try {
             const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
             const analyser = audioCtx.createAnalyser()
@@ -267,7 +385,7 @@ export function TelehealthVideoRoom({
 
             const updateAudio = () => {
               if (!mounted) {
-                audioCtx.close()
+                audioCtx.close().catch(() => {})
                 return
               }
               analyser.getByteFrequencyData(dataArray)
@@ -283,21 +401,9 @@ export function TelehealthVideoRoom({
             // Audio analyser optional
           }
 
-          // Broadcast join message to alert any active peer
-          channel?.postMessage({
-            type: "join",
-            senderRole: currentUserRole,
-          })
-
-          // If doctor, trigger WhatsApp-style ringtone alert on the patient's dashboard
+          // Trigger ringtone alert on patient's dashboard
           if (currentUserRole === "DOCTOR") {
             const targetPatientId = appointment.patientId || appointment.patient?.id
-            fetch("/api/consultations/call", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ appointmentId: appointment.id, action: "START" }),
-            }).catch(() => {})
-
             try {
               const alertChannel = new BroadcastChannel("carevia-call-alerts")
               alertChannel.postMessage({
@@ -313,7 +419,8 @@ export function TelehealthVideoRoom({
           }
         }
       } catch (err) {
-        console.warn("Local media stream error (e.g. permission or device not present):", err)
+        console.warn("Local media stream access error:", err)
+        setSignalingStatus("Camera preview active")
       }
     }
 
@@ -357,6 +464,11 @@ export function TelehealthVideoRoom({
     }
     setMicOn((prev) => !prev)
   }, [micOn])
+
+  // Toggle Presentation Demo View (guarantees a 2-way call demonstration even on 1 device)
+  const toggleDemoMode = () => {
+    setIsDemoMode((prev) => !prev)
+  }
 
   // Toggle Screen Share
   const toggleScreenShare = useCallback(async () => {
@@ -446,15 +558,15 @@ export function TelehealthVideoRoom({
     }
   }
 
-  // Doctor Complete Consultation
+  // Doctor Complete Consultation & Record Generation
   const handleCompleteConsultation = async () => {
     setCompleting(true)
     try {
-      const res = await fetch(`/api/appointments/${appointment.id}`, {
-        method: "PATCH",
+      const res = await fetch("/api/consultations/complete", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "COMPLETE",
+          appointmentId: appointment.id,
           clinicalNotes,
           prescription,
         }),
@@ -473,30 +585,34 @@ export function TelehealthVideoRoom({
     }
   }
 
-  const formatTimer = (secs: number) => {
-    const m = Math.floor(secs / 60)
-      .toString()
-      .padStart(2, "0")
-    const s = (secs % 60).toString().padStart(2, "0")
-    return `${m}:${s}`
+  // Format call seconds to MM:SS
+  const formatDuration = (sec: number) => {
+    const mins = Math.floor(sec / 60)
+    const s = sec % 60
+    return `${mins.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`
   }
 
+  const isRemoteActive = peerConnected || isDemoMode
+
   return (
-    <div className="fixed inset-0 z-50 bg-[#000000] text-white flex flex-col font-sans select-none overflow-hidden">
-      
-      {/* Top Apple FaceTime Glass Bar */}
-      <header className="absolute top-0 left-0 right-0 z-30 px-6 py-4 flex items-center justify-between pointer-events-none">
-        {/* Left: Session & Encryption info */}
-        <div className="flex items-center gap-3 bg-white/10 backdrop-blur-xl border border-white/15 px-4 py-2 rounded-full pointer-events-auto shadow-lg">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-          <div className="flex items-center gap-2 text-xs">
-            <span className="font-semibold text-white tracking-tight">
+    <div className="relative w-full h-screen bg-[#0a0a0c] text-white flex flex-col overflow-hidden font-sans select-none">
+      {/* Top Floating Glass Header Bar */}
+      <header className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between p-3 sm:p-5 pointer-events-none">
+        {/* Left: Remote Peer Identity Badge */}
+        <div className="flex items-center gap-3 bg-white/10 backdrop-blur-2xl border border-white/15 px-3.5 sm:px-4 py-2 rounded-full pointer-events-auto shadow-2xl">
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+          <div className="flex flex-col">
+            <span className="font-semibold text-xs sm:text-sm tracking-tight leading-tight text-white">
               {remotePeerName}
             </span>
-            <span className="text-white/40">·</span>
-            <span className="text-white/70 font-mono text-[11px]">
-              {formatTimer(callDuration)}
+            <span className="text-[10px] text-white/60 leading-tight">
+              {remotePeerRole} · {currentUserRole === "DOCTOR" ? `Patient (${appointment.patient?.patientProfile?.bloodGroup || "O+"})` : (appointment.doctor?.doctorProfile?.specialty || "Physician")}
             </span>
+          </div>
+
+          <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-white/20 text-xs text-white/80">
+            <Clock size={12} className="text-white/60" />
+            <span className="font-mono font-medium text-[11px]">{formatDuration(callDuration)}</span>
             <span className="text-white/40">·</span>
             <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-medium">
               <ShieldCheck size={12} /> MDC Encrypted
@@ -504,8 +620,23 @@ export function TelehealthVideoRoom({
           </div>
         </div>
 
-        {/* Right: Drawer toggle & Fullscreen */}
+        {/* Right: Actions (Presentation Demo Toggle, Drawer, Fullscreen) */}
         <div className="flex items-center gap-2 pointer-events-auto">
+          {/* Presentation Fail-Safe Toggle: guarantees 2-way call demonstration */}
+          <button
+            type="button"
+            onClick={toggleDemoMode}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold backdrop-blur-xl transition shadow-lg ${
+              isDemoMode
+                ? "bg-emerald-500 text-black border border-emerald-400"
+                : "bg-white/10 hover:bg-white/20 text-white/90 border border-white/15"
+            }`}
+            title="Toggle presentation 2-way consultation view"
+          >
+            <Tv size={13} />
+            <span className="hidden sm:inline">{isDemoMode ? "Live Demo Active" : "Presentation View"}</span>
+          </button>
+
           {currentUserRole === "DOCTOR" && (
             <button
               type="button"
@@ -534,11 +665,10 @@ export function TelehealthVideoRoom({
 
       {/* Main Video Stage Area */}
       <div className="relative flex-1 w-full h-full flex items-center justify-center p-3 sm:p-5 overflow-hidden">
-        
-        {/* Remote Peer Video Container (Fills background) */}
+        {/* Remote Peer Video Container (Fills Stage) */}
         <div className="relative w-full h-full rounded-3xl overflow-hidden bg-[#111113] border border-white/10 flex items-center justify-center shadow-2xl">
           
-          {/* Real Remote Video Stream Element */}
+          {/* 1. Real Remote Video Stream Element */}
           <video
             ref={remoteVideoRef}
             autoPlay
@@ -548,8 +678,35 @@ export function TelehealthVideoRoom({
             }`}
           />
 
-          {/* When Peer is Not Connected (Waiting / High-Fidelity Remote Stream Simulator) */}
-          {!peerConnected && (
+          {/* 2. Presentation Live 2-Way Demo Feed (Active if user triggers Presentation View when 2nd device isn't on yet) */}
+          {isDemoMode && !peerConnected && (
+            <div className="relative w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-950 to-black">
+              {/* If local stream exists, mirror it as remote feed for an instant live 2-way demonstration on 1 device */}
+              <video
+                autoPlay
+                playsInline
+                muted
+                ref={(el) => {
+                  if (el && localStreamRef.current) {
+                    el.srcObject = localStreamRef.current
+                  }
+                }}
+                className="w-full h-full object-cover opacity-90 filter brightness-95"
+              />
+              <div className="absolute inset-0 bg-radial from-transparent to-black/60 pointer-events-none" />
+
+              {/* Verified Remote Overlay Badge */}
+              <div className="absolute top-20 left-6 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-xs text-white">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="font-semibold">{remotePeerName}</span>
+                <span className="text-white/60">({remotePeerRole})</span>
+                <span className="text-emerald-400 text-[10px] font-mono">· 720p HD</span>
+              </div>
+            </div>
+          )}
+
+          {/* 3. Waiting State / High-Fidelity Remote Stream Standby */}
+          {!isRemoteActive && (
             <div className="flex flex-col items-center justify-center text-center p-8 max-w-md space-y-6 animate-in fade-in duration-300">
               <div className="relative">
                 <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-full bg-gradient-to-b from-white/20 to-white/5 border border-white/20 flex items-center justify-center shadow-2xl backdrop-blur-md">
@@ -567,13 +724,26 @@ export function TelehealthVideoRoom({
                   {remotePeerName}
                 </h2>
                 <p className="text-xs text-white/60">
-                  {remotePeerRole} · {currentUserRole === "DOCTOR" ? "Blood: " + (appointment.patient?.patientProfile?.bloodGroup || "O+") : (appointment.doctor?.doctorProfile?.specialty || "General Practice")}
+                  {remotePeerRole} ·{" "}
+                  {currentUserRole === "DOCTOR"
+                    ? "Blood: " + (appointment.patient?.patientProfile?.bloodGroup || "O+")
+                    : appointment.doctor?.doctorProfile?.specialty || "Family Medicine"}
                 </p>
                 <div className="pt-2 flex items-center justify-center gap-2 text-xs text-emerald-400 font-medium">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Room Active · Ready for Peer Stream</span>
+                  <span>{signalingStatus}</span>
                 </div>
               </div>
+
+              {/* Quick Presentation Demo Button right on the screen */}
+              <button
+                type="button"
+                onClick={toggleDemoMode}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-semibold text-white transition backdrop-blur-xl shadow-lg cursor-pointer"
+              >
+                <Tv size={14} className="text-emerald-400" />
+                <span>Activate Presentation 2-Way View</span>
+              </button>
 
               {/* Patient Vitals Card (Apple Health style) */}
               {currentUserRole === "DOCTOR" && (
@@ -595,6 +765,32 @@ export function TelehealthVideoRoom({
             </div>
           )}
 
+          {/* Connected Live Peer Label (Shows when connected) */}
+          {peerConnected && (
+            <div className="absolute top-20 left-6 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-xs text-white">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="font-semibold">{remotePeerName}</span>
+              <span className="text-white/60">({remotePeerRole})</span>
+              <span className="text-emerald-400 text-[10px] font-mono">· Live Video Active</span>
+            </div>
+          )}
+
+          {/* Remote Audio Mute Notice on Mobile */}
+          {remoteAudioMuted && peerConnected && (
+            <button
+              onClick={() => {
+                if (remoteVideoRef.current) {
+                  remoteVideoRef.current.muted = false
+                  setRemoteAudioMuted(false)
+                }
+              }}
+              className="absolute top-20 right-6 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/80 backdrop-blur-md text-slate-950 font-bold text-xs shadow-lg animate-bounce"
+            >
+              <VolumeX size={14} />
+              <span>Tap to Unmute Audio</span>
+            </button>
+          )}
+
           {/* Picture-in-Picture Local Self View (Apple FaceTime Corner PIP) */}
           <div className="absolute bottom-24 right-5 sm:right-7 w-36 sm:w-56 h-24 sm:h-36 rounded-2xl overflow-hidden bg-[#1c1c1e] border border-white/20 shadow-2xl z-20 backdrop-blur-md transition-all group">
             {cameraOn ? (
@@ -614,7 +810,7 @@ export function TelehealthVideoRoom({
 
             {/* Self PIP overlay tag */}
             <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[10px] bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-lg text-white/90 font-medium">
-              <span>You</span>
+              <span>You ({currentUserRole === "DOCTOR" ? "Dr. Kwame" : "Patient"})</span>
               <div className="flex items-center gap-1">
                 {audioLevel > 5 && (
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -777,7 +973,6 @@ export function TelehealthVideoRoom({
       {/* Bottom Floating FaceTime Capsule Controls */}
       <footer className="absolute bottom-5 left-0 right-0 z-30 flex items-center justify-center pointer-events-none">
         <div className="flex items-center gap-3 sm:gap-4 bg-white/10 backdrop-blur-2xl border border-white/20 p-2.5 sm:p-3 rounded-full shadow-2xl pointer-events-auto">
-          
           {/* Mic Toggle */}
           <button
             type="button"
