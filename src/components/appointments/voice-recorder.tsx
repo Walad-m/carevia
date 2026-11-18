@@ -165,7 +165,7 @@ export function VoiceRecorder({
           )}
 
           <p className="text-xs text-slate-400 text-center sm:text-left">
-            Describe how you feel naturally — Gemini AI extracts clinical symptoms.
+            Describe how you feel naturally; clinical symptoms will be extracted.
           </p>
         </div>
       )}

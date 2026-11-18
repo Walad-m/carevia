@@ -273,7 +273,7 @@ export function BookingForm({ doctors }: { doctors: DoctorOption[] }) {
                 Tell us what you are experiencing
               </h2>
               <p className="text-xs text-slate-500 mt-1">
-                You do not need to choose a doctor or guess medical specialties. Write in everyday language or record a voice note—our clinical AI will prepare your intake and match you with the right verified physician.
+                You do not need to choose a doctor or guess medical specialties. Write in everyday language or record a voice note, and our clinical AI will prepare your intake and match you with the right verified physician.
               </p>
             </div>
 

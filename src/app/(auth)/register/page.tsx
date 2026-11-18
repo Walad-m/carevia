@@ -262,7 +262,7 @@ export default function RegisterPage() {
         {role === "PATIENT" && (
           <div className="space-y-4 pt-3 border-t border-slate-100">
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              Medical Profile <span className="font-normal normal-case">(optional — can be added later)</span>
+              Medical Profile <span className="font-normal normal-case">(optional, can be added later)</span>
             </p>
 
             <div className="grid grid-cols-2 gap-3">

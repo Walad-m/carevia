@@ -67,7 +67,7 @@ export default async function DoctorDashboardPage() {
             .
           </p>
           <p className="text-xs text-slate-400 mt-4">
-            This typically takes 24–48 hours.{" "}
+            This typically takes 24 to 48 hours.{" "}
             <a href="mailto:support@carevia.gh" className="underline hover:text-slate-600">
               Contact support
             </a>{" "}

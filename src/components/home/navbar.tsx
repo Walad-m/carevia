@@ -24,8 +24,8 @@ export function HomeNavbar() {
             <a href="#features" className="hover:text-slate-950 transition">
               How It Works
             </a>
-            <a href="#physicians" className="hover:text-slate-950 transition">
-              Physicians
+            <a href="#articles" className="hover:text-slate-950 transition">
+              Articles
             </a>
             <a href="#pricing" className="hover:text-slate-950 transition">
               Pricing

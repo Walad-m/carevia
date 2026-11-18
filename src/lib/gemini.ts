@@ -35,24 +35,28 @@ Reported Severity: ${severity || "Moderate"}
 Age Category: ${ageGroup || "Adult"}
 `.trim()
 
-  const systemPrompt = `You are an expert Clinical Intake & Triage Officer on the Carevia Telemedicine Platform in Ghana (guided by Team Good Life principles).
+  const systemPrompt = `You are an expert Clinical Intake and Triage Officer on the Carevia Telemedicine Platform in Ghana (guided by Team Good Life principles).
 
 CORE DIRECTIVES:
-1. PREPARE • FLAG • ROUTE — NEVER DIAGNOSES.
-   - Do NOT provide a disease diagnosis or label (e.g., do not say "The patient has malaria or pneumonia").
-   - Instead, analyze symptoms, determine the required Medical Specialty, rate urgency, and prepare objective clinical notes for the doctor.
+1. PREPARE, FLAG, AND ROUTE. NEVER DIAGNOSE.
+   - Do NOT provide a definitive disease diagnosis or label (e.g. do not say "The patient has malaria or pneumonia").
+   - Instead, analyze symptoms, determine the required Medical Specialty, rate urgency, and prepare objective clinical notes for the physician.
 2. EMERGENCY FLAGGING:
-   - Identify acute red flags (crushing chest pain, severe shortness of breath, sudden slurred speech, infant lethargy/inconsolable crying, severe acute bleeding, suspected cholera dehydration).
-   - If red flags are present, set isEmergency: true, urgency: "EMERGENCY", and provide emergency guidance directing them to call Ghana National Ambulance Service on 112 / 193.
+   - Identify acute red flags (crushing chest pain, severe shortness of breath, sudden slurred speech, infant lethargy or inconsolable crying, severe acute bleeding, suspected cholera dehydration).
+   - If red flags are present, set isEmergency: true, urgency: "EMERGENCY", and provide emergency guidance directing them to call Ghana National Ambulance Service on 112 or 193.
 3. MATCHED SPECIALTY:
    - Must select the single best fit from this exact list of Ghana specialties:
    ${JSON.stringify(CANONICAL_SPECIALTIES)}
    - Default to "General Practice / Family Medicine" when symptoms are broad, mild, or multi-system.
    - If patient is a child or infant, route to "Pediatrics".
-   - If skin/rash, route to "Dermatology & Venereology".
-   - If cardiac/chest palpitations/hypertension, route to "Cardiology".
-   - If pregnancy/maternal/gynecological, route to "Obstetrics & Gynaecology".
-   - If mood/anxiety/depression/insomnia, route to "Psychiatry & Mental Health".
+   - If skin or rash, route to "Dermatology & Venereology".
+   - If cardiac, chest palpitations, or hypertension, route to "Cardiology".
+   - If pregnancy, maternal, or gynecological, route to "Obstetrics & Gynaecology".
+   - If mood, anxiety, depression, or insomnia, route to "Psychiatry & Mental Health".
+
+STRICT FORMATTING RULE:
+- Never use em dashes (the character —) or en dashes (–). Use commas, colons, or regular hyphens instead.
+- Never use markdown hash symbols (#, ##, ###) in clinicalSummary or any text field. Use clean bullet points and bold headers instead.
 
 RETURN STRICT JSON ONLY:
 {
@@ -61,9 +65,9 @@ RETURN STRICT JSON ONLY:
   "isEmergency": boolean,
   "emergencyAdvice": "String with 112 guidance if emergency, or null",
   "chiefComplaint": "1 concise sentence describing the primary issue",
-  "triageReasoning": "1-2 plain-language sentences for the patient explaining why this medical specialty was matched without diagnosing them",
-  "clinicalSummary": "Markdown clinical intake note with: ### Chief Complaint, ### History & Progression, ### Red Flags / Urgent Observations, ### Recommended Focus for Attending Physician",
-  "suggestedQuestions": ["2-3 specific clinical questions for the physician to ask during consultation"]
+  "triageReasoning": "1 to 2 plain language sentences for the patient explaining why this medical specialty was matched without diagnosing them",
+  "clinicalSummary": "Clean clinical intake note using bold labels (do not use hash symbols): Chief Complaint: ..., History and Progression: ..., Urgent Observations: ..., Attending Physician Focus: ...",
+  "suggestedQuestions": ["2 to 3 specific clinical questions for the physician to ask during consultation"]
 }`
 
   if (!apiKey || apiKey === "demo" || apiKey.includes("your-gemini-api-key")) {
@@ -85,7 +89,7 @@ RETURN STRICT JSON ONLY:
             },
           },
           {
-            text: `Patient input details: ${combinedDescription}. Synthesize the audio and details according to the instructions and return the JSON.`,
+            text: `Patient input details: ${combinedDescription}. Synthesize the audio and details according to the instructions and return the JSON. Remember: do not use em dashes or hash symbols.`,
           },
         ],
       })
@@ -94,12 +98,12 @@ RETURN STRICT JSON ONLY:
         role: "user",
         parts: [
           { text: systemPrompt },
-          { text: `Analyze this patient intake:\n\n${combinedDescription}\n\nRespond with strict JSON only:` },
+          { text: `Analyze this patient intake:\n\n${combinedDescription}\n\nRespond with strict JSON only. Do not use em dashes or hash symbols:` },
         ],
       })
     }
 
-    const response = await fetch(
+    const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
@@ -114,35 +118,45 @@ RETURN STRICT JSON ONLY:
       }
     )
 
-    if (!response.ok) {
-      console.warn("[GEMINI_TRIAGE_HTTP_ERROR]", response.status)
+    if (!res.ok) {
+      console.warn(`[GEMINI_API_ERROR] ${res.status} ${res.statusText}. Using fallback engine.`)
       return generateFallbackTriage(input)
     }
 
-    const json = await response.json()
-    const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text
-
-    if (!rawText) return generateFallbackTriage(input)
-
-    const parsed = JSON.parse(rawText) as ClinicalTriageResult
-
-    // Validate specialty
-    const validSpecialty = CANONICAL_SPECIALTIES.includes(parsed.matchedSpecialty as any)
-      ? parsed.matchedSpecialty
-      : "General Practice / Family Medicine"
-
-    return {
-      matchedSpecialty: validSpecialty,
-      urgency: parsed.urgency || "ROUTINE",
-      isEmergency: Boolean(parsed.isEmergency),
-      emergencyAdvice: parsed.emergencyAdvice || null,
-      chiefComplaint: parsed.chiefComplaint || problemText.slice(0, 100),
-      triageReasoning: parsed.triageReasoning || `Matched with ${validSpecialty} for comprehensive evaluation.`,
-      clinicalSummary: parsed.clinicalSummary || generateFallbackSummary(problemText),
-      suggestedQuestions: parsed.suggestedQuestions || ["Timeline of symptom onset", "Prior medication use"],
+    const data = await res.json()
+    const textOutput = data?.candidates?.[0]?.content?.parts?.[0]?.text
+    if (!textOutput) {
+      return generateFallbackTriage(input)
     }
-  } catch (error) {
-    console.error("[GEMINI_TRIAGE_PARSE_ERROR]", error)
+
+    const parsed: ClinicalTriageResult = JSON.parse(textOutput)
+
+    // Sanitize any accidental em-dashes or markdown hashes
+    parsed.clinicalSummary = (parsed.clinicalSummary || "")
+      .replace(/###/g, "")
+      .replace(/##/g, "")
+      .replace(/#/g, "")
+      .replace(/—/g, ", ")
+      .replace(/–/g, "-")
+
+    parsed.triageReasoning = (parsed.triageReasoning || "")
+      .replace(/—/g, ", ")
+      .replace(/–/g, "-")
+      .replace(/#/g, "")
+
+    parsed.chiefComplaint = (parsed.chiefComplaint || "")
+      .replace(/—/g, ", ")
+      .replace(/–/g, "-")
+      .replace(/#/g, "")
+
+    // Validation guard: verify specialty is in canonical list
+    if (!CANONICAL_SPECIALTIES.includes(parsed.matchedSpecialty)) {
+      parsed.matchedSpecialty = "General Practice / Family Medicine"
+    }
+
+    return parsed
+  } catch (err) {
+    console.error("[GEMINI_TRIAGE_EXCEPTION]", err)
     return generateFallbackTriage(input)
   }
 }
@@ -184,11 +198,11 @@ function generateFallbackTriage(input: ClinicalTriageInput): ClinicalTriageResul
       chiefComplaint: input.problemText?.slice(0, 120) || "Acute potentially life-threatening distress.",
       triageReasoning:
         "Your reported symptoms contain urgent clinical warning signs requiring in-person hospital evaluation. Carevia has flagged emergency services for your safety.",
-      clinicalSummary: `### Clinical Intake Summary (Emergency Protocol)
-- **Chief Complaint:** Acute emergency symptoms reported: "${input.problemText?.slice(0, 150)}..."
-- **Urgency Tier:** EMERGENCY (Red Flag Activated)
-- **Clinical History:** Duration: ${duration}. Severity: ${severity}.
-- **Action Taken:** Patient redirected to emergency care services (112/193).`,
+      clinicalSummary: `Clinical Intake Summary (Emergency Protocol)
+- Chief Complaint: Acute emergency symptoms reported: "${input.problemText?.slice(0, 150)}..."
+- Urgency Tier: EMERGENCY (Red Flag Activated)
+- Clinical History: Duration: ${duration}. Severity: ${severity}.
+- Action Taken: Patient redirected to emergency care services (112 or 193).`,
       suggestedQuestions: [
         "Are symptoms escalating right now?",
         "Is patient conscious and breathing normally?",
@@ -231,12 +245,12 @@ function generateFallbackTriage(input: ClinicalTriageInput): ClinicalTriageResul
     emergencyAdvice: null,
     chiefComplaint: input.problemText?.slice(0, 120) || "Patient submitted consultation intake.",
     triageReasoning: reasonMap[matchedSpecialty] || `Matched with ${matchedSpecialty} based on your symptom description.`,
-    clinicalSummary: `### Clinical Intake Summary (AI-Prepared)
-- **Chief Complaint:** ${input.problemText?.slice(0, 150) || "Symptom intake submitted."}
-- **Clinical History & Progression:** Reported onset ${duration} ago. Patient categorizes severity as ${severity}.
-- **Specialty Indicated:** ${matchedSpecialty}
-- **Red Flags / Urgent Notes:** ${urgency === "URGENT" ? "Urgent attention recommended; monitor for acute changes." : "None reported; routine evaluation appropriate."}
-- **Attending Physician Focus:** Evaluate primary complaint, assess vital signs, verify recent medication trials, and determine need for confirmatory diagnostic testing.`,
+    clinicalSummary: `Clinical Intake Summary (AI-Prepared)
+- Chief Complaint: ${input.problemText?.slice(0, 150) || "Symptom intake submitted."}
+- Clinical History & Progression: Reported onset ${duration} ago. Patient categorizes severity as ${severity}.
+- Specialty Indicated: ${matchedSpecialty}
+- Red Flags / Urgent Notes: ${urgency === "URGENT" ? "Urgent attention recommended; monitor for acute changes." : "None reported; routine evaluation appropriate."}
+- Attending Physician Focus: Evaluate primary complaint, assess vital signs, verify recent medication trials, and determine need for confirmatory diagnostic testing.`,
     suggestedQuestions: [
       `When exactly did these symptoms first appear?`,
       `Have you taken any over-the-counter medications or traditional remedies?`,
@@ -247,9 +261,9 @@ function generateFallbackTriage(input: ClinicalTriageInput): ClinicalTriageResul
 
 export function generateFallbackSummary(text?: string): string {
   const content = text?.trim() || "Patient submitted a recorded voice consultation note."
-  return `### Clinical Intake Summary (AI-Prepared)
-- **Chief Complaint:** ${content.slice(0, 120)}${content.length > 120 ? "..." : ""}
-- **Clinical History & Progression:** Patient reports onset of symptoms as detailed in original intake.
-- **Reported Treatments / Medications:** Not specified in initial problem submission.
-- **Red Flags / Urgent Notes:** Routine teleconsultation requested; patient advised to seek emergency services if acute distress develops.`
+  return `Clinical Intake Summary (AI-Prepared)
+- Chief Complaint: ${content.slice(0, 120)}${content.length > 120 ? "..." : ""}
+- Clinical History & Progression: Patient reports onset of symptoms as detailed in original intake.
+- Reported Treatments / Medications: Not specified in initial problem submission.
+- Red Flags / Urgent Notes: Routine teleconsultation requested; patient advised to seek emergency services if acute distress develops.`
 }

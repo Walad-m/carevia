@@ -3,15 +3,16 @@ import { HomeNavbar } from "@/components/home/navbar"
 import { OutbreakBanner } from "@/components/home/outbreak-banner"
 import { HomeHeroSection } from "@/components/home/hero-section"
 import { HowItWorksSection } from "@/components/home/how-it-works"
+import { HealthArticlesSection } from "@/components/home/articles-section"
 import { PricingSection } from "@/components/home/pricing-section"
 import { TrustLayerSection } from "@/components/home/trust-layer"
 import { HomeFooter } from "@/components/home/footer"
-import { FALLBACK_OUTBREAK_ALERTS } from "@/lib/fallback-content"
+import { FALLBACK_OUTBREAK_ALERTS, FALLBACK_ARTICLES } from "@/lib/fallback-content"
 
 export const instant = false
 
 export default async function HomePage() {
-  // Fetch active outbreak alerts for subtle top announcement
+  // 1. Fetch active outbreak alerts
   let outbreakAlerts = FALLBACK_OUTBREAK_ALERTS
   try {
     const alerts = await (db as any).outbreakAlert?.findMany?.({
@@ -25,9 +26,22 @@ export default async function HomePage() {
     console.warn("[OUTBREAK_FETCH_FALLBACK]", err)
   }
 
+  // 2. Fetch curated health articles
+  let articles = FALLBACK_ARTICLES
+  try {
+    const fetchedArticles = await (db as any).healthArticle?.findMany?.({
+      orderBy: { publishedAt: "desc" },
+    })
+    if (fetchedArticles && fetchedArticles.length > 0) {
+      articles = fetchedArticles
+    }
+  } catch (err) {
+    console.warn("[ARTICLES_FETCH_FALLBACK]", err)
+  }
+
   return (
     <div className="min-h-screen bg-white text-slate-950 flex flex-col font-sans selection:bg-slate-900 selection:text-white">
-      {/* 1. Subtle Apple-style Public Health Announcement */}
+      {/* 1. Subtle Public Health Announcement with direct link to articles */}
       <OutbreakBanner alerts={outbreakAlerts} />
 
       {/* 2. Frosted Apple Navigation */}
@@ -40,14 +54,17 @@ export default async function HomePage() {
         {/* 4. Care Pathway & Technology Bento */}
         <HowItWorksSection />
 
-        {/* 5. Clear, Transparent Pricing */}
+        {/* 5. Evidence-Based Clinical Articles & Guides */}
+        <HealthArticlesSection articles={articles} />
+
+        {/* 6. Clear, Transparent Pricing */}
         <PricingSection />
 
-        {/* 6. Privacy & MDC Clinical Governance */}
+        {/* 7. Privacy & MDC Clinical Governance */}
         <TrustLayerSection />
       </main>
 
-      {/* 7. Apple Footnote & Footer */}
+      {/* 8. Apple Footnote & Footer */}
       <HomeFooter />
     </div>
   )
